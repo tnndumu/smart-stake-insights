@@ -278,7 +278,7 @@ const DailyBettingInsights = () => {
         )}
 
         {/* No Games State */}
-        {!loading && !error && games.length === 0 && (
+        {!loading && !error && upcoming.all.length === 0 && (
           <div className="text-center py-8 bg-card rounded-lg">
             <div className="text-muted-foreground">No upcoming games found.</div>
             <div className="text-sm text-muted-foreground/60 mt-1">(All leagues may be in offseason)</div>
@@ -329,7 +329,7 @@ const DailyBettingInsights = () => {
 
 
         {/* No Filtered Results */}
-        {!loading && !error && games.length > 0 && sortedLeagues.length === 0 && (
+        {!loading && !error && upcoming.all.length > 0 && sortedLeagues.length === 0 && (
           <div className="text-center py-8 bg-card rounded-lg">
             <div className="text-muted-foreground">No games match your current filters.</div>
           </div>
