@@ -22,7 +22,7 @@ export async function fetchOfficialGames(dateYYYYMMDD: string) {
 }
 
 export async function fetchUpcomingGames(opts?: { days?: number }) {
-  const days = opts?.days ?? 30;
+  const days = opts?.days ?? 7;
   const today = new Date();
   const promises: Promise<Game[]>[] = [];
 
