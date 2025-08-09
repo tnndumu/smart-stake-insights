@@ -69,10 +69,10 @@ const AdminDashboard = () => {
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('role')
-        .eq('id', user.id)
-        .single();
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-      if (error || profile?.role !== 'admin') {
+      if (error || !profile || profile.role !== 'admin') {
         toast({
           title: "Access Denied",
           description: "You don't have admin permissions",
