@@ -19,13 +19,34 @@ const Header = () => {
           </div>
           
           <nav className="hidden md:flex items-center space-x-6">
-            <a href="#predictions" className="text-foreground hover:text-primary transition-colors">
+            <a 
+              href="#predictions" 
+              className="text-foreground hover:text-primary transition-colors cursor-pointer"
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById('predictions')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+            >
               Predictions
             </a>
-            <a href="#stats" className="text-foreground hover:text-primary transition-colors">
+            <a 
+              href="#stats" 
+              className="text-foreground hover:text-primary transition-colors cursor-pointer"
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById('stats')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+            >
               Statistics
             </a>
-            <a href="#analysis" className="text-foreground hover:text-primary transition-colors">
+            <a 
+              href="#analysis" 
+              className="text-foreground hover:text-primary transition-colors cursor-pointer"
+              onClick={(e) => {
+                e.preventDefault();
+                document.getElementById('analysis')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+            >
               Analysis
             </a>
           </nav>

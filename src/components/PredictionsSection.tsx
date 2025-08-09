@@ -1,60 +1,41 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Clock, TrendingUp, Target, Calendar } from "lucide-react";
-
-const predictions = [
-  {
-    id: 1,
-    sport: "NFL",
-    matchup: "Chiefs vs Patriots",
-    prediction: "Chiefs -7.5",
-    confidence: 85,
-    odds: "-110",
-    status: "pending",
-    time: "8:00 PM EST",
-    date: "Today",
-    analysis: "Chiefs coming off strong performance, Patriots struggling on defense"
-  },
-  {
-    id: 2,
-    sport: "NBA",
-    matchup: "Lakers vs Warriors",
-    prediction: "Over 225.5",
-    confidence: 78,
-    odds: "-105",
-    status: "won",
-    time: "10:30 PM EST",
-    date: "Yesterday",
-    analysis: "Both teams averaging high scoring games, fast pace expected"
-  },
-  {
-    id: 3,
-    sport: "MLB",
-    matchup: "Yankees vs Red Sox",
-    prediction: "Yankees ML",
-    confidence: 92,
-    odds: "+120",
-    status: "won",
-    time: "7:00 PM EST",
-    date: "Yesterday",
-    analysis: "Yankees pitcher has dominated Red Sox historically"
-  },
-  {
-    id: 4,
-    sport: "NHL",
-    matchup: "Rangers vs Bruins",
-    prediction: "Under 6.5",
-    confidence: 71,
-    odds: "-115",
-    status: "lost",
-    time: "8:00 PM EST",
-    date: "2 days ago",
-    analysis: "Both goalies in excellent form, expecting tight defensive game"
-  }
-];
+import { Clock, TrendingUp, Target, Calendar, RefreshCw } from "lucide-react";
+import { useSportsData } from "@/hooks/useSportsData";
 
 const PredictionsSection = () => {
+  const { predictions, loading, error } = useSportsData();
+
+  if (loading) {
+    return (
+      <section className="py-16 px-4" id="predictions">
+        <div className="container mx-auto">
+          <div className="text-center">
+            <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+            <p className="text-muted-foreground">Loading today's predictions...</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="py-16 px-4" id="predictions">
+        <div className="container mx-auto">
+          <div className="text-center">
+            <p className="text-destructive mb-4">{error}</p>
+            <Button onClick={() => window.location.reload()}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Try Again
+            </Button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="py-16 px-4" id="predictions">
       <div className="container mx-auto">
