@@ -116,7 +116,11 @@ const PredictionsSection = () => {
         </div>
         
         <div className="text-center mt-12">
-          <Button size="lg" className="bg-gradient-to-r from-primary to-warning hover:opacity-90">
+          <Button 
+            size="lg" 
+            className="bg-gradient-to-r from-primary to-warning hover:opacity-90"
+            onClick={() => window.location.href = '/daily-betting-insights'}
+          >
             View All Predictions
           </Button>
         </div>

@@ -24,12 +24,7 @@ const Hero = () => {
             <Button 
               size="lg" 
               className="bg-gradient-to-r from-primary to-warning hover:opacity-90 text-lg px-8 py-3"
-              onClick={() => {
-                const element = document.getElementById('predictions');
-                if (element) {
-                  element.scrollIntoView({ behavior: 'smooth' });
-                }
-              }}
+              onClick={() => window.location.href = '/daily-betting-insights'}
             >
               <Target className="h-5 w-5 mr-2" />
               View Today's Picks
