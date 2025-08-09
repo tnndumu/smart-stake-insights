@@ -14,7 +14,132 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bets: {
+        Row: {
+          category: string
+          created_at: string
+          game_date: string
+          id: string
+          odds_away: number | null
+          odds_home: number | null
+          prediction: string
+          prediction_confidence: number | null
+          reasoning: string | null
+          sport: string
+          start_time: string | null
+          status: string | null
+          team_away: string
+          team_home: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          game_date: string
+          id?: string
+          odds_away?: number | null
+          odds_home?: number | null
+          prediction: string
+          prediction_confidence?: number | null
+          reasoning?: string | null
+          sport: string
+          start_time?: string | null
+          status?: string | null
+          team_away: string
+          team_home: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          game_date?: string
+          id?: string
+          odds_away?: number | null
+          odds_home?: number | null
+          prediction?: string
+          prediction_confidence?: number | null
+          reasoning?: string | null
+          sport?: string
+          start_time?: string | null
+          status?: string | null
+          team_away?: string
+          team_home?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          email: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          subscription_status: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          email: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          subscription_status?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          email?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          subscription_status?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      subscriptions: {
+        Row: {
+          created_at: string
+          end_date: string | null
+          id: string
+          start_date: string
+          status: string
+          stripe_customer_id: string | null
+          stripe_payment_id: string | null
+          stripe_subscription_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          start_date: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_payment_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          start_date?: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_payment_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +148,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user" | "subscriber"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +275,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user", "subscriber"],
+    },
   },
 } as const
