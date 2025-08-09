@@ -1,49 +1,36 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { DateTime } from 'luxon';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { RefreshCw, Search, Filter, TrendingUp, Star, Lock, Clock, MapPin, Trophy } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { RefreshCw, Search, Clock, Trophy, Calendar } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { todayRangeET, tomorrowRangeET, TZ } from '@/utils/time';
-import { fetchOfficialGames } from '@/services/leagues/all';
+import { TZ } from '@/utils/time';
+import { fetchUpcomingGames } from '@/services/leagues/all';
 import { predict } from '@/services/predict';
 import AnalysisModal from '@/components/AnalysisModal';
+import type { Game } from '@/services/leagues';
 
-interface Bet {
-  id: number;
-  sport: string;
-  homeTeam: string;
-  awayTeam: string;
-  odds: string;
-  confidence: number;
-  reasoning: string;
-  category: 'moneyline' | 'spread' | 'over_under';
-  gameDate: string;
-  gameTime: string;
-  prediction: string;
+interface GameWithPrediction extends Game {
+  prediction: {
+    probHome: number;
+    probAway: number;
+    analysis: string[];
+    recommendation?: string;
+  };
 }
 
-type DayMode = 'today' | 'tomorrow';
-
 const DailyBettingInsights = () => {
-  const { user, isSubscriber } = useAuth();
-  const [mode, setMode] = useState<DayMode>('today');
-  const [games, setGames] = useState<any[]>([]);
+  const [games, setGames] = useState<GameWithPrediction[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sportFilter, setSportFilter] = useState('all');
   const [lastUpdated, setLastUpdated] = useState<DateTime | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedGame, setSelectedGame] = useState<any | null>(null);
+  const [selectedGame, setSelectedGame] = useState<GameWithPrediction | null>(null);
   const { toast } = useToast();
-
-  const range = useMemo(() => (mode === 'today' ? todayRangeET() : tomorrowRangeET()), [mode]);
 
   const fetchData = async () => {
     let alive = true;
@@ -51,15 +38,13 @@ const DailyBettingInsights = () => {
     setError(null);
     
     try {
-      const dateYYYYMMDD = range.startET.toFormat('yyyy-MM-dd');
-      
-      // Fetch official games
-      const officialGames = await fetchOfficialGames(dateYYYYMMDD);
+      // Fetch upcoming games (next 30 days)
+      const upcomingGames = await fetchUpcomingGames();
       
       if (!alive) return;
       
       // Add predictions to games
-      const gamesWithPredictions = officialGames.map(game => ({
+      const gamesWithPredictions = upcomingGames.map(game => ({
         ...game,
         prediction: predict(game)
       }));
@@ -84,49 +69,7 @@ const DailyBettingInsights = () => {
 
   useEffect(() => {
     fetchData();
-  }, [range.startUTC.toISO(), range.endUTC.toISO()]);
-  
-  const handleSubscribe = async () => {
-    if (!user) {
-      toast({
-        title: "Authentication Required",
-        description: "Please sign in to subscribe",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      
-      if (!token) {
-        toast({
-          title: "Authentication Required",
-          description: "Please sign in to subscribe",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke('create-checkout', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (error) throw error;
-
-      // Open Stripe checkout in a new tab
-      window.open(data.url, '_blank');
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: "Failed to create checkout session",
-        variant: "destructive",
-      });
-    }
-  };
+  }, []);
 
   const filteredGames = games.filter(game => {
     const matchesSearch = game.home.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -136,20 +79,102 @@ const DailyBettingInsights = () => {
     return matchesSearch && matchesSport;
   });
 
-  const sortedGames = [...filteredGames].sort((a, b) => {
-    return new Date(a.startUtc).getTime() - new Date(b.startUtc).getTime();
+  // Group games by league
+  const gamesByLeague = filteredGames.reduce((acc, game) => {
+    if (!acc[game.league]) {
+      acc[game.league] = [];
+    }
+    acc[game.league].push(game);
+    return acc;
+  }, {} as Record<string, GameWithPrediction[]>);
+
+  // Sort each league's games by start time
+  Object.keys(gamesByLeague).forEach(league => {
+    gamesByLeague[league].sort((a, b) => 
+      new Date(a.startUtc).getTime() - new Date(b.startUtc).getTime()
+    );
   });
 
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 70) return 'text-success';
-    if (confidence >= 50) return 'text-warning';
-    return 'text-destructive';
+  const leagueOrder = ['NFL', 'NBA', 'MLB', 'NHL', 'WNBA', 'EPL', 'MLS'];
+  const sortedLeagues = leagueOrder.filter(league => gamesByLeague[league]?.length > 0);
+
+  const sourceUrls = {
+    MLB: 'statsapi.mlb.com',
+    NBA: 'cdn.nba.com', 
+    NHL: 'api-web.nhle.com',
+    WNBA: 'stats.wnba.com',
+    NFL: 'static.nfl.com',
+    EPL: 'premierleague.com',
+    MLS: 'api.mlssoccer.com'
   };
 
-  const getConfidenceVariant = (confidence: number) => {
-    if (confidence >= 70) return 'default';
-    if (confidence >= 50) return 'secondary';
-    return 'destructive';
+  const renderGameCard = (game: GameWithPrediction) => {
+    const kickoffET = DateTime.fromISO(game.startUtc, { zone: 'utc' }).setZone(TZ);
+    const isToday = kickoffET.hasSame(DateTime.now().setZone(TZ), 'day');
+    const isTomorrow = kickoffET.hasSame(DateTime.now().setZone(TZ).plus({ days: 1 }), 'day');
+    
+    return (
+      <div key={`${game.id}-${game.league}`} className="border rounded-xl p-4 bg-card hover:bg-accent/50 transition-colors">
+        <div className="flex justify-between items-start mb-2">
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">{game.league}</Badge>
+            <span className="text-xs text-muted-foreground">
+              Source: Official {sourceUrls[game.league as keyof typeof sourceUrls]} site
+            </span>
+          </div>
+          <div className="text-right text-sm text-muted-foreground">
+            <div className="flex items-center gap-1">
+              {isToday && <span className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded">Today</span>}
+              {isTomorrow && <span className="text-xs bg-secondary text-secondary-foreground px-2 py-1 rounded">Tomorrow</span>}
+            </div>
+            <div>{kickoffET.toFormat('ccc, LLL d')}</div>
+            <div>{kickoffET.toFormat('h:mm a')} ET</div>
+          </div>
+        </div>
+        
+        <div className="font-semibold text-lg mb-1">
+          {game.away} @ {game.home}
+        </div>
+        
+        {game.venue && (
+          <div className="text-sm text-muted-foreground mb-2">{game.venue}</div>
+        )}
+        
+        <div className="grid md:grid-cols-2 gap-4 mb-3">
+          <div>
+            <div className="text-sm font-medium mb-1">Win Probabilities</div>
+            <div className="text-sm space-y-1">
+              <div className="flex justify-between">
+                <span>{game.home}</span>
+                <span className="font-medium">{(game.prediction.probHome * 100).toFixed(1)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span>{game.away}</span>
+                <span className="font-medium">{(game.prediction.probAway * 100).toFixed(1)}%</span>
+              </div>
+            </div>
+          </div>
+          
+          <div>
+            <div className="text-sm font-medium mb-1">Quick Analysis</div>
+            <div className="text-xs text-muted-foreground space-y-1">
+              {game.prediction.analysis.slice(0, 2).map((bullet, idx) => (
+                <div key={idx}>• {bullet}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+        
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full cursor-pointer"
+          onClick={() => setSelectedGame(game)}
+        >
+          View Full Analysis
+        </Button>
+      </div>
+    );
   };
 
   return (
@@ -164,26 +189,12 @@ const DailyBettingInsights = () => {
               </div>
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-warning bg-clip-text text-transparent">
-                  Daily Betting Insights
+                  Upcoming Games & Analysis
                 </h1>
-                <p className="text-sm text-muted-foreground">Expert predictions from official league sources</p>
+                <p className="text-sm text-muted-foreground">Official schedules with AI predictions</p>
               </div>
             </div>
             <div className="flex gap-2">
-              <Button
-                variant={mode === 'today' ? 'default' : 'outline'}
-                onClick={() => setMode('today')}
-                size="sm"
-              >
-                Today
-              </Button>
-              <Button
-                variant={mode === 'tomorrow' ? 'default' : 'outline'}
-                onClick={() => setMode('tomorrow')}
-                size="sm"
-              >
-                Tomorrow
-              </Button>
               <Button 
                 onClick={fetchData} 
                 variant="outline" 
@@ -202,16 +213,53 @@ const DailyBettingInsights = () => {
         {/* Status Info */}
         <div className="text-sm text-muted-foreground bg-card p-3 rounded-lg mb-6">
           <div className="flex items-center gap-4 flex-wrap">
-            <span>Showing games for <strong>{range.label}</strong> (Eastern Time)</span>
+            <span className="flex items-center gap-1">
+              <Calendar className="h-3 w-3" />
+              Showing upcoming games (next 30 days)
+            </span>
             {lastUpdated && (
               <span className="flex items-center gap-1">
                 <Clock className="h-3 w-3" />
                 Last updated: {lastUpdated.toFormat('h:mm a ZZZZ')}
               </span>
             )}
-            <span>Official games: {games.length}</span>
+            <span>Total games: {games.length}</span>
           </div>
         </div>
+
+        {/* Filters */}
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Input
+                    placeholder="Search by team, sport, or match..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+              <Select value={sportFilter} onValueChange={setSportFilter}>
+                <SelectTrigger className="w-full sm:w-48">
+                  <SelectValue placeholder="Filter by sport" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sports</SelectItem>
+                  <SelectItem value="NFL">NFL</SelectItem>
+                  <SelectItem value="NBA">NBA</SelectItem>
+                  <SelectItem value="MLB">MLB</SelectItem>
+                  <SelectItem value="NHL">NHL</SelectItem>
+                  <SelectItem value="WNBA">WNBA</SelectItem>
+                  <SelectItem value="EPL">EPL</SelectItem>
+                  <SelectItem value="MLS">MLS</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Error State */}
         {error && (
@@ -224,141 +272,48 @@ const DailyBettingInsights = () => {
         {loading && (
           <div className="text-center py-8">
             <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2 text-muted-foreground" />
-            <div>Loading accurate games and predictions...</div>
+            <div>Loading official schedules and generating predictions...</div>
           </div>
         )}
 
         {/* No Games State */}
         {!loading && !error && games.length === 0 && (
           <div className="text-center py-8 bg-card rounded-lg">
-            <div className="text-muted-foreground">No official games scheduled for this day.</div>
-            <div className="text-sm text-muted-foreground/60 mt-1">(Leagues may be in offseason)</div>
+            <div className="text-muted-foreground">No upcoming games found.</div>
+            <div className="text-sm text-muted-foreground/60 mt-1">(All leagues may be in offseason)</div>
           </div>
         )}
 
-        {/* Official Games Section */}
-        {!loading && !error && games.length > 0 && (
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MapPin className="h-5 w-5" />
-                Official League Games ({games.length})
-              </CardTitle>
-              <CardDescription>
-                Direct from official league sources with AI predictions
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-3">
-                {sortedGames.map((game) => {
-                  const kickoffET = DateTime.fromISO(game.startUtc, { zone: 'utc' }).setZone(TZ);
-                  const sourceUrls = {
-                    MLB: 'statsapi.mlb.com',
-                    NBA: 'cdn.nba.com', 
-                    NHL: 'api-web.nhle.com',
-                    WNBA: 'stats.wnba.com',
-                    NFL: 'static.nfl.com',
-                    EPL: 'premierleague.com',
-                    MLS: 'api.mlssoccer.com'
-                  };
-                  
-                  return (
-                    <div key={`${game.id}-${game.league}`} className="border rounded-xl p-4 bg-muted/20">
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline">{game.league}</Badge>
-                          <span className="text-xs text-muted-foreground">
-                            Source: {sourceUrls[game.league as keyof typeof sourceUrls]}
-                          </span>
-                        </div>
-                        <div className="text-right text-sm text-muted-foreground">
-                          <div>{kickoffET.toFormat('ccc, LLL d')}</div>
-                          <div>{kickoffET.toFormat('h:mm a')}</div>
-                        </div>
-                      </div>
-                      
-                      <div className="font-semibold text-lg mb-1">
-                        {game.away} @ {game.home}
-                      </div>
-                      
-                      {game.venue && (
-                        <div className="text-sm text-muted-foreground mb-2">{game.venue}</div>
-                      )}
-                      
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div>
-                          <div className="text-sm font-medium mb-1">Prediction</div>
-                          <div className="text-sm">
-                            <div className="font-medium">{game.prediction.recommendation}</div>
-                            <div className="text-muted-foreground">
-                              {game.home}: {(game.prediction.probHome * 100).toFixed(0)}% | {game.away}: {(game.prediction.probAway * 100).toFixed(0)}%
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <div className="text-sm font-medium mb-1">Quick Analysis</div>
-                          <div className="text-xs text-muted-foreground space-y-1">
-                            {game.prediction.analysis.slice(0, 2).map((bullet, idx) => (
-                              <div key={idx}>• {bullet}</div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-3"
-                        onClick={() => setSelectedGame(game)}
-                      >
-                        View Full Analysis
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-
-        {/* Filters */}
-        {!loading && !error && games.length > 0 && (
-          <Card className="mb-6">
-            <CardContent className="pt-6">
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                    <Input
-                      placeholder="Search by team, sport, or match..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10"
-                    />
+        {/* Games by League */}
+        {!loading && !error && sortedLeagues.length > 0 && (
+          <div className="space-y-8">
+            {sortedLeagues.map(league => (
+              <Card key={league}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Badge variant="secondary">{league}</Badge>
+                    {league} - {gamesByLeague[league].length} games
+                  </CardTitle>
+                  <CardDescription>
+                    Source: Official {sourceUrls[league as keyof typeof sourceUrls]} site
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {gamesByLeague[league].map(renderGameCard)}
                   </div>
-                </div>
-                <Select value={sportFilter} onValueChange={setSportFilter}>
-                  <SelectTrigger className="w-full sm:w-48">
-                    <SelectValue placeholder="Filter by sport" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Sports</SelectItem>
-                    <SelectItem value="NBA">NBA</SelectItem>
-                    <SelectItem value="NFL">NFL</SelectItem>
-                    <SelectItem value="MLB">MLB</SelectItem>
-                    <SelectItem value="NHL">NHL</SelectItem>
-                    <SelectItem value="WNBA">WNBA</SelectItem>
-                    <SelectItem value="EPL">EPL</SelectItem>
-                    <SelectItem value="MLS">MLS</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         )}
 
+        {/* No Filtered Results */}
+        {!loading && !error && games.length > 0 && sortedLeagues.length === 0 && (
+          <div className="text-center py-8 bg-card rounded-lg">
+            <div className="text-muted-foreground">No games match your current filters.</div>
+          </div>
+        )}
       </div>
 
       {/* Analysis Modal */}
