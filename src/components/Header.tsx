@@ -19,44 +19,77 @@ const Header = () => {
           </div>
           
           <nav className="hidden md:flex items-center space-x-6">
-            <a 
-              href="#predictions" 
+            <button 
               className="text-foreground hover:text-primary transition-colors cursor-pointer"
-              onClick={(e) => {
-                e.preventDefault();
-                document.getElementById('predictions')?.scrollIntoView({ behavior: 'smooth' });
+              onClick={() => {
+                console.log('Predictions link clicked');
+                const element = document.getElementById('predictions');
+                console.log('Found predictions element:', element);
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                  console.error('Predictions section not found');
+                }
               }}
             >
               Predictions
-            </a>
-            <a 
-              href="#stats" 
+            </button>
+            <button 
               className="text-foreground hover:text-primary transition-colors cursor-pointer"
-              onClick={(e) => {
-                e.preventDefault();
-                document.getElementById('stats')?.scrollIntoView({ behavior: 'smooth' });
+              onClick={() => {
+                console.log('Stats link clicked');
+                const element = document.getElementById('stats');
+                console.log('Found stats element:', element);
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                  console.error('Stats section not found');
+                }
               }}
             >
               Statistics
-            </a>
-            <a 
-              href="#analysis" 
+            </button>
+            <button 
               className="text-foreground hover:text-primary transition-colors cursor-pointer"
-              onClick={(e) => {
-                e.preventDefault();
-                document.getElementById('analysis')?.scrollIntoView({ behavior: 'smooth' });
+              onClick={() => {
+                console.log('Analysis link clicked');
+                const element = document.getElementById('analysis');
+                console.log('Found analysis element:', element);
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                  console.error('Analysis section not found');
+                }
               }}
             >
               Analysis
-            </a>
+            </button>
           </nav>
           
           <div className="flex items-center space-x-3">
-            <Button variant="outline" size="sm">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => {
+                const element = document.getElementById('stats');
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth' });
+                }
+              }}
+            >
               <TrendingUp className="h-4 w-4 mr-2" />
               Track Record
             </Button>
-            <Button variant="default" size="sm">
+            <Button 
+              variant="default" 
+              size="sm"
+              onClick={() => {
+                const element = document.getElementById('predictions');
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth' });
+                }
+              }}
+            >
               <Target className="h-4 w-4 mr-2" />
               Get Picks
             </Button>

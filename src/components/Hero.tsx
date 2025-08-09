@@ -21,11 +21,30 @@ const Hero = () => {
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-            <Button size="lg" className="bg-gradient-to-r from-primary to-warning hover:opacity-90 text-lg px-8 py-3">
+            <Button 
+              size="lg" 
+              className="bg-gradient-to-r from-primary to-warning hover:opacity-90 text-lg px-8 py-3"
+              onClick={() => {
+                const element = document.getElementById('predictions');
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth' });
+                }
+              }}
+            >
               <Target className="h-5 w-5 mr-2" />
               View Today's Picks
             </Button>
-            <Button variant="outline" size="lg" className="text-lg px-8 py-3">
+            <Button 
+              variant="outline" 
+              size="lg" 
+              className="text-lg px-8 py-3"
+              onClick={() => {
+                const element = document.getElementById('stats');
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth' });
+                }
+              }}
+            >
               <BarChart3 className="h-5 w-5 mr-2" />
               See Track Record
             </Button>
