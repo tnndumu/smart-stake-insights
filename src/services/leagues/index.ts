@@ -1,6 +1,6 @@
 export type Game = {
   id: string;
-  league: 'MLB'|'NBA'|'NHL'|'WNBA';
+  league: 'MLB'|'NBA'|'NHL'|'WNBA'|'NFL'|'EPL'|'MLS';
   startUtc: string;            // ISO UTC
   home: string;
   away: string;

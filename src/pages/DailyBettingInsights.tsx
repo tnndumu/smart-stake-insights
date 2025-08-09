@@ -11,9 +11,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { todayRangeET, tomorrowRangeET, TZ } from '@/utils/time';
-import { getOddsForDay } from '@/services/odds';
 import { fetchOfficialGames } from '@/services/leagues/all';
 import { predict } from '@/services/predict';
+import AnalysisModal from '@/components/AnalysisModal';
 
 interface Bet {
   id: number;
@@ -35,15 +35,12 @@ const DailyBettingInsights = () => {
   const { user, isSubscriber } = useAuth();
   const [mode, setMode] = useState<DayMode>('today');
   const [games, setGames] = useState<any[]>([]);
-  const [oddsGames, setOddsGames] = useState<any[]>([]);
-  const [bets, setBets] = useState<Bet[]>([]);
-  const [premiumBets, setPremiumBets] = useState<Bet[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sportFilter, setSportFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('confidence');
   const [lastUpdated, setLastUpdated] = useState<DateTime | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedGame, setSelectedGame] = useState<any | null>(null);
   const { toast } = useToast();
 
   const range = useMemo(() => (mode === 'today' ? todayRangeET() : tomorrowRangeET()), [mode]);
@@ -56,58 +53,19 @@ const DailyBettingInsights = () => {
     try {
       const dateYYYYMMDD = range.startET.toFormat('yyyy-MM-dd');
       
-      // Fetch official games and odds data in parallel
-      const [officialGames, oddsData] = await Promise.all([
-        fetchOfficialGames(dateYYYYMMDD),
-        getOddsForDay({ startUTC: range.startUTC, endUTC: range.endUTC })
-      ]);
+      // Fetch official games
+      const officialGames = await fetchOfficialGames(dateYYYYMMDD);
       
       if (!alive) return;
       
-      setGames(officialGames);
-      setOddsGames(oddsData);
+      // Add predictions to games
+      const gamesWithPredictions = officialGames.map(game => ({
+        ...game,
+        prediction: predict(game)
+      }));
+      
+      setGames(gamesWithPredictions);
       setLastUpdated(DateTime.now().setZone(TZ));
-      
-      // Generate mock bets based on official games
-      const mockBets: Bet[] = officialGames.slice(0, 5).map((game, index) => {
-        const prediction = predict(game);
-        return {
-          id: index + 1,
-          sport: game.league,
-          homeTeam: game.home,
-          awayTeam: game.away,
-          odds: prediction.probHome > 0.5 ? '-110' : '+120',
-          confidence: Math.round(Math.max(prediction.probHome, prediction.probAway) * 100),
-          reasoning: prediction.recommendation,
-          category: ['moneyline', 'spread', 'over_under'][index % 3] as any,
-          gameDate: mode === 'today' ? 'Today' : 'Tomorrow',
-          gameTime: DateTime.fromISO(game.startUtc, { zone: 'utc' }).setZone(TZ).toFormat('h:mm a'),
-          prediction: prediction.probHome > 0.5 ? `${game.home} ML` : `${game.away} ML`
-        };
-      });
-      
-      setBets(mockBets);
-      
-      // Premium bets only for subscribers
-      if (isSubscriber) {
-        const premiumMockBets: Bet[] = officialGames.slice(5, 8).map((game, index) => {
-          const prediction = predict(game);
-          return {
-            id: index + 100,
-            sport: game.league,
-            homeTeam: game.home,
-            awayTeam: game.away,
-            odds: '+180',
-            confidence: Math.round(Math.max(prediction.probHome, prediction.probAway) * 100),
-            reasoning: 'Advanced analytics show significant edge in this matchup',
-            category: ['moneyline', 'spread', 'over_under'][index % 3] as any,
-            gameDate: mode === 'today' ? 'Today' : 'Tomorrow',
-            gameTime: DateTime.fromISO(game.startUtc, { zone: 'utc' }).setZone(TZ).toFormat('h:mm a'),
-            prediction: prediction.recommendation
-          };
-        });
-        setPremiumBets(premiumMockBets);
-      }
     } catch (e: any) {
       if (!alive) return;
       setError(e?.message || 'Failed to load games');
@@ -126,7 +84,7 @@ const DailyBettingInsights = () => {
 
   useEffect(() => {
     fetchData();
-  }, [range.startUTC.toISO(), range.endUTC.toISO(), isSubscriber]);
+  }, [range.startUTC.toISO(), range.endUTC.toISO()]);
   
   const handleSubscribe = async () => {
     if (!user) {
@@ -170,25 +128,16 @@ const DailyBettingInsights = () => {
     }
   };
 
-  const filteredBets = bets.filter(bet => {
-    const matchesSearch = bet.homeTeam.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         bet.awayTeam.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         bet.sport.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesSport = sportFilter === 'all' || bet.sport.toLowerCase() === sportFilter.toLowerCase();
+  const filteredGames = games.filter(game => {
+    const matchesSearch = game.home.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         game.away.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         game.league.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSport = sportFilter === 'all' || game.league.toLowerCase() === sportFilter.toLowerCase();
     return matchesSearch && matchesSport;
   });
 
-  const sortedBets = [...filteredBets].sort((a, b) => {
-    switch (sortBy) {
-      case 'confidence':
-        return b.confidence - a.confidence;
-      case 'odds':
-        return parseFloat(b.odds) - parseFloat(a.odds);
-      case 'time':
-        return a.gameTime.localeCompare(b.gameTime);
-      default:
-        return 0;
-    }
+  const sortedGames = [...filteredGames].sort((a, b) => {
+    return new Date(a.startUtc).getTime() - new Date(b.startUtc).getTime();
   });
 
   const getConfidenceColor = (confidence: number) => {
@@ -261,7 +210,6 @@ const DailyBettingInsights = () => {
               </span>
             )}
             <span>Official games: {games.length}</span>
-            <span>Odds available: {oddsGames.length}</span>
           </div>
         </div>
 
@@ -302,14 +250,16 @@ const DailyBettingInsights = () => {
             </CardHeader>
             <CardContent>
               <div className="grid gap-3">
-                {games.map((game) => {
-                  const prediction = predict(game);
+                {sortedGames.map((game) => {
                   const kickoffET = DateTime.fromISO(game.startUtc, { zone: 'utc' }).setZone(TZ);
                   const sourceUrls = {
                     MLB: 'statsapi.mlb.com',
                     NBA: 'cdn.nba.com', 
                     NHL: 'api-web.nhle.com',
-                    WNBA: 'stats.wnba.com'
+                    WNBA: 'stats.wnba.com',
+                    NFL: 'static.nfl.com',
+                    EPL: 'premierleague.com',
+                    MLS: 'api.mlssoccer.com'
                   };
                   
                   return (
@@ -339,22 +289,31 @@ const DailyBettingInsights = () => {
                         <div>
                           <div className="text-sm font-medium mb-1">Prediction</div>
                           <div className="text-sm">
-                            <div className="font-medium">{prediction.recommendation}</div>
+                            <div className="font-medium">{game.prediction.recommendation}</div>
                             <div className="text-muted-foreground">
-                              {game.home}: {(prediction.probHome * 100).toFixed(0)}% | {game.away}: {(prediction.probAway * 100).toFixed(0)}%
+                              {game.home}: {(game.prediction.probHome * 100).toFixed(0)}% | {game.away}: {(game.prediction.probAway * 100).toFixed(0)}%
                             </div>
                           </div>
                         </div>
                         
                         <div>
-                          <div className="text-sm font-medium mb-1">Analysis</div>
+                          <div className="text-sm font-medium mb-1">Quick Analysis</div>
                           <div className="text-xs text-muted-foreground space-y-1">
-                            {prediction.analysis.map((bullet, idx) => (
+                            {game.prediction.analysis.slice(0, 2).map((bullet, idx) => (
                               <div key={idx}>• {bullet}</div>
                             ))}
                           </div>
                         </div>
                       </div>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => setSelectedGame(game)}
+                      >
+                        View Full Analysis
+                      </Button>
                     </div>
                   );
                 })}
@@ -363,76 +322,9 @@ const DailyBettingInsights = () => {
           </Card>
         )}
 
-        {/* Premium 5 Bets Section */}
-        {!loading && !error && (
-          <Card className="mb-8 bg-gradient-to-br from-primary/10 to-warning/10 border-primary/20">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Star className="h-5 w-5 text-warning" />
-                Premium 5 Bets
-              </CardTitle>
-              <CardDescription>
-                Our highest confidence picks backed by advanced analytics
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isSubscriber ? (
-                <div className="space-y-4">
-                  {premiumBets.length > 0 ? (
-                    <>
-                      {premiumBets.map((bet) => (
-                        <div key={bet.id} className="bg-card p-4 rounded-lg border border-primary/20">
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="flex items-center gap-2">
-                              <Badge variant="secondary">{bet.sport}</Badge>
-                              <Badge 
-                                variant={getConfidenceVariant(bet.confidence)}
-                                className={getConfidenceColor(bet.confidence)}
-                              >
-                                {bet.confidence}% confidence
-                              </Badge>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm text-muted-foreground">{bet.gameDate}</div>
-                              <div className="text-sm font-medium">{bet.gameTime}</div>
-                            </div>
-                          </div>
-                          <div className="text-lg font-semibold mb-1">
-                            {bet.awayTeam} vs {bet.homeTeam}
-                          </div>
-                          <div className="text-base font-medium text-primary mb-2">
-                            {bet.prediction} ({bet.odds})
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {bet.reasoning}
-                          </div>
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <div className="text-center py-8">
-                      <div className="text-muted-foreground">No premium bets available for {mode}.</div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Lock className="h-12 w-12 text-warning mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">Unlock Premium Insights</h3>
-                  <p className="text-muted-foreground mb-4">
-                    Get access to our highest confidence picks and advanced analytics
-                  </p>
-                  <Button onClick={handleSubscribe} className="bg-gradient-to-r from-primary to-warning">
-                    Upgrade to Premium
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
 
         {/* Filters */}
-        {!loading && !error && bets.length > 0 && (
+        {!loading && !error && games.length > 0 && (
           <Card className="mb-6">
             <CardContent className="pt-6">
               <div className="flex flex-col sm:flex-row gap-4">
@@ -458,16 +350,8 @@ const DailyBettingInsights = () => {
                     <SelectItem value="MLB">MLB</SelectItem>
                     <SelectItem value="NHL">NHL</SelectItem>
                     <SelectItem value="WNBA">WNBA</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={sortBy} onValueChange={setSortBy}>
-                  <SelectTrigger className="w-full sm:w-48">
-                    <SelectValue placeholder="Sort by" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="confidence">Confidence</SelectItem>
-                    <SelectItem value="odds">Odds</SelectItem>
-                    <SelectItem value="time">Game Time</SelectItem>
+                    <SelectItem value="EPL">EPL</SelectItem>
+                    <SelectItem value="MLS">MLS</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -475,61 +359,14 @@ const DailyBettingInsights = () => {
           </Card>
         )}
 
-        {/* Main Content */}
-        {!loading && !error && bets.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>{mode === 'today' ? "Today's" : "Tomorrow's"} Top Picks</CardTitle>
-              <CardDescription>
-                {filteredBets.length} bets available from official league data
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Sport</TableHead>
-                    <TableHead>Matchup</TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Prediction</TableHead>
-                    <TableHead>Odds</TableHead>
-                    <TableHead>Confidence</TableHead>
-                    <TableHead>Analysis</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedBets.map((bet) => (
-                    <TableRow key={bet.id}>
-                      <TableCell>
-                        <Badge variant="outline">{bet.sport}</Badge>
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {bet.awayTeam} vs {bet.homeTeam}
-                      </TableCell>
-                      <TableCell>{bet.gameTime}</TableCell>
-                      <TableCell className="font-medium text-primary">
-                        {bet.prediction}
-                      </TableCell>
-                      <TableCell className="font-mono">{bet.odds}</TableCell>
-                      <TableCell>
-                        <Badge 
-                          variant={getConfidenceVariant(bet.confidence)}
-                          className={getConfidenceColor(bet.confidence)}
-                        >
-                          {bet.confidence}%
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate">
-                        {bet.reasoning}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        )}
       </div>
+
+      {/* Analysis Modal */}
+      <AnalysisModal 
+        open={!!selectedGame} 
+        onClose={() => setSelectedGame(null)} 
+        game={selectedGame} 
+      />
     </div>
   );
 };

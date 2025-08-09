@@ -2,10 +2,13 @@ import { MLBAdapter } from './mlb';
 import { NBAAdapter } from './nba';
 import { NHLAdapter } from './nhl';
 import { WNBAAdapter } from './wnba';
+import { NFLAdapter } from './nfl';
+import { EPLAdapter } from './epl';
+import { MLSAdapter } from './mls';
 import type { LeagueAdapter, Game } from './index';
 
 export const adapters: LeagueAdapter[] = [
-  MLBAdapter, NBAAdapter, NHLAdapter, WNBAAdapter
+  MLBAdapter, NBAAdapter, NHLAdapter, WNBAAdapter, NFLAdapter, EPLAdapter, MLSAdapter
 ];
 
 export async function fetchOfficialGames(dateYYYYMMDD: string) {
