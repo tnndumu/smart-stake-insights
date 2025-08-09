@@ -11,29 +11,79 @@ const PredictionsSection = () => {
   const [cards, setCards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasAnyResults, setHasAnyResults] = useState(false);
 
   useEffect(() => {
     let alive = true;
+    let loadingTimeout: NodeJS.Timeout;
+    const accumulatedGames: any[] = [];
+
+    // Stop loading after 2 seconds or when first results arrive
+    loadingTimeout = setTimeout(() => {
+      if (alive && !hasAnyResults) {
+        setLoading(false);
+      }
+    }, 2000);
+
+    const handleLeagueComplete = (leagueName: string, games: any[]) => {
+      if (!alive) return;
+      
+      const nowISO = DateTime.now().toUTC().toISO();
+      const gamesWithPredictions = games
+        .filter((g: any) => !g.startUtc || g.startUtc >= nowISO)
+        .map((g: any) => ({ ...g, prediction: predict(g) }));
+      
+      accumulatedGames.push(...gamesWithPredictions);
+      
+      // Update displayed cards immediately, keep only top 6
+      const sortedGames = [...accumulatedGames]
+        .sort((a, b) => a.startUtc.localeCompare(b.startUtc))
+        .slice(0, 6);
+      
+      setCards(sortedGames);
+      
+      if (!hasAnyResults && gamesWithPredictions.length > 0) {
+        setHasAnyResults(true);
+        setLoading(false);
+        clearTimeout(loadingTimeout);
+      }
+    };
+
     (async () => {
       try {
+        // Load live games first
         const live = await fetchLiveGames();
-        const upcoming = await fetchUpcomingGames({ days: 30 });
-        const nowISO = DateTime.now().toUTC().toISO();
-        const next = [
-          ...live.all,
-          ...upcoming.all.filter((g: any) => !g.startUtc || g.startUtc >= nowISO)
-        ]
-          .slice(0, 6)
-          .map((g: any) => ({ ...g, prediction: predict(g) }));
-        if (alive) setCards(next);
+        if (alive && live.all.length > 0) {
+          const liveWithPredictions = live.all.map((g: any) => ({ ...g, prediction: predict(g) }));
+          accumulatedGames.push(...liveWithPredictions);
+          setCards([...accumulatedGames].slice(0, 6));
+          setHasAnyResults(true);
+          setLoading(false);
+          clearTimeout(loadingTimeout);
+        }
+
+        // Then load upcoming games with incremental updates (changed from 30 to 7 days)
+        await fetchUpcomingGames({ 
+          days: 7, 
+          onLeagueComplete: handleLeagueComplete 
+        });
+        
+        if (alive && !hasAnyResults) {
+          setLoading(false);
+        }
       } catch (e: any) {
-        if (alive) setError(e?.message || 'Failed to load games');
-      } finally {
-        if (alive) setLoading(false);
+        if (alive) {
+          setError(e?.message || 'Failed to load games');
+          setLoading(false);
+        }
       }
     })();
-    return () => { alive = false; };
-  }, []);
+
+    return () => { 
+      alive = false; 
+      clearTimeout(loadingTimeout);
+    };
+  }, [hasAnyResults]);
 
   if (loading) {
     return (
