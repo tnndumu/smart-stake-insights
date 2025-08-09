@@ -10,5 +10,9 @@ export type Game = {
 
 export interface LeagueAdapter {
   id: Game['league'];
-  fetchByDate(dateYYYYMMDD: string): Promise<Game[]>;
+  fetchByDate?: (dateYYYYMMDD: string) => Promise<Game[]>;
+  fetchUpcoming?: () => Promise<Game[]>;
+  fetchLive?: () => Promise<Game[]>;
 }
+
+export type League = Game['league'];

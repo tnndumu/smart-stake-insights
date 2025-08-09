@@ -6,6 +6,10 @@ const LIVE = 'https://static.nfl.com/liveupdate/scores/scores.json';
 export const NFLAdapter: LeagueAdapter = {
   id: 'NFL',
   async fetchByDate(_date) {
+    // NFL does not expose a stable public upcoming schedule JSON
+    return [];
+  },
+  async fetchLive() {
     try {
       const r = await fetch(LIVE);
       if (!r.ok) return [];
@@ -13,7 +17,6 @@ export const NFLAdapter: LeagueAdapter = {
       const out: Game[] = [];
       for (const k of Object.keys(j)) {
         const g = j[k];
-        // Convert EST time text to ISO if present; fallback to Date now if missing
         const iso = g?.start_time ? new Date(g.start_time).toISOString() : new Date().toISOString();
         out.push({
           id: String(k),
@@ -27,7 +30,7 @@ export const NFLAdapter: LeagueAdapter = {
       }
       return out;
     } catch (error) {
-      console.warn('NFL adapter failed:', error);
+      console.warn('NFL adapter live failed:', error);
       return [];
     }
   }

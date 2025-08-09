@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { RefreshCw, Search, Clock, Trophy, Calendar } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { TZ } from '@/utils/time';
-import { fetchUpcomingGames } from '@/services/leagues/all';
+import { fetchUpcomingGames, fetchLiveGames } from '@/services/leagues/all';
 import { predict } from '@/services/predict';
 import AnalysisModal from '@/components/AnalysisModal';
 import type { Game } from '@/services/leagues';
@@ -23,70 +23,74 @@ interface GameWithPrediction extends Game {
 }
 
 const DailyBettingInsights = () => {
-  const [games, setGames] = useState<GameWithPrediction[]>([]);
+  const [live, setLive] = useState<{byLeague: Record<string, any[]>; all: any[]}>({ byLeague: {}, all: [] });
+  const [upcoming, setUpcoming] = useState<{byLeague: Record<string, any[]>; all: any[]; meta?: any}>({ byLeague: {}, all: [] });
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sportFilter, setSportFilter] = useState('all');
   const [lastUpdated, setLastUpdated] = useState<DateTime | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedGame, setSelectedGame] = useState<GameWithPrediction | null>(null);
+  const [selectedGame, setSelectedGame] = useState<any | null>(null);
   const { toast } = useToast();
 
   const fetchData = async () => {
     let alive = true;
     setLoading(true);
     setError(null);
-    
+
     try {
-      // Fetch upcoming games (next 30 days)
-      const upcomingGames = await fetchUpcomingGames();
-      
+      const [liveNow, upNext] = await Promise.all([fetchLiveGames(), fetchUpcomingGames({ days: 30 })]);
       if (!alive) return;
-      
-      // Add predictions to games
-      const gamesWithPredictions = upcomingGames.map(game => ({
-        ...game,
-        prediction: predict(game)
-      }));
-      
-      setGames(gamesWithPredictions);
+
+      const mapWithPred = (by: Record<string, any[]>) => Object.fromEntries(
+        Object.entries(by).map(([k, v]) => [k, v.map(g => ({ ...g, prediction: predict(g) }))])
+      );
+
+      setLive({ byLeague: mapWithPred(liveNow.byLeague), all: liveNow.all });
+      setUpcoming({ byLeague: mapWithPred(upNext.byLeague), all: upNext.all, meta: upNext.meta });
       setLastUpdated(DateTime.now().setZone(TZ));
     } catch (e: any) {
-      if (!alive) return;
       setError(e?.message || 'Failed to load games');
       console.error('Error fetching data:', e);
-      toast({
-        title: "Error",
-        description: e?.message || 'Failed to load games',
-        variant: "destructive",
-      });
+      toast({ title: 'Error', description: e?.message || 'Failed to load games', variant: 'destructive' });
     } finally {
-      if (alive) setLoading(false);
+      setLoading(false);
     }
-    
+
     return () => { alive = false; };
   };
 
   useEffect(() => {
+    let alive = true;
     fetchData();
+    const t = setInterval(async () => {
+      if (!alive) return;
+      try {
+        const liveNow = await fetchLiveGames();
+        const mapWithPred = (by: Record<string, any[]>) => Object.fromEntries(
+          Object.entries(by).map(([k, v]) => [k, v.map(g => ({ ...g, prediction: predict(g) }))])
+        );
+        setLive({ byLeague: mapWithPred(liveNow.byLeague), all: liveNow.all });
+        setLastUpdated(DateTime.now().setZone(TZ));
+      } catch {}
+    }, 30000);
+    return () => { alive = false; clearInterval(t); };
   }, []);
 
-  const filteredGames = games.filter(game => {
-    const matchesSearch = game.home.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         game.away.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         game.league.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesSport = sportFilter === 'all' || game.league.toLowerCase() === sportFilter.toLowerCase();
+  const filteredUpcoming = upcoming.all.filter((game: any) => {
+    const matchesSearch = (game.home || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (game.away || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (game.league || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSport = sportFilter === 'all' || (game.league || '').toLowerCase() === sportFilter.toLowerCase();
     return matchesSearch && matchesSport;
   });
 
   // Group games by league
-  const gamesByLeague = filteredGames.reduce((acc, game) => {
-    if (!acc[game.league]) {
-      acc[game.league] = [];
-    }
+  const gamesByLeague = filteredUpcoming.reduce((acc: any, game: any) => {
+    if (!acc[game.league]) acc[game.league] = [];
     acc[game.league].push(game);
     return acc;
-  }, {} as Record<string, GameWithPrediction[]>);
+  }, {} as Record<string, any[]>);
 
   // Sort each league's games by start time
   Object.keys(gamesByLeague).forEach(league => {
@@ -108,16 +112,18 @@ const DailyBettingInsights = () => {
     MLS: 'api.mlssoccer.com'
   };
 
-  const renderGameCard = (game: GameWithPrediction) => {
+  const renderGameCard = (game: any) => {
     const kickoffET = DateTime.fromISO(game.startUtc, { zone: 'utc' }).setZone(TZ);
     const isToday = kickoffET.hasSame(DateTime.now().setZone(TZ), 'day');
     const isTomorrow = kickoffET.hasSame(DateTime.now().setZone(TZ).plus({ days: 1 }), 'day');
-    
+    const isLive = (game as any).status === 'live' || String(game?.extra?.status?.state || '').toLowerCase() === 'live';
+
     return (
       <div key={`${game.id}-${game.league}`} className="border rounded-xl p-4 bg-card hover:bg-accent/50 transition-colors">
         <div className="flex justify-between items-start mb-2">
           <div className="flex items-center gap-2">
             <Badge variant="outline">{game.league}</Badge>
+            {isLive && <span className="text-xs px-2 py-0.5 rounded bg-destructive text-destructive-foreground">Live</span>}
             <span className="text-xs text-muted-foreground">
               Source: Official {sourceUrls[game.league as keyof typeof sourceUrls]} site
             </span>
@@ -131,15 +137,12 @@ const DailyBettingInsights = () => {
             <div>{kickoffET.toFormat('h:mm a')} ET</div>
           </div>
         </div>
-        
         <div className="font-semibold text-lg mb-1">
           {game.away} @ {game.home}
         </div>
-        
         {game.venue && (
           <div className="text-sm text-muted-foreground mb-2">{game.venue}</div>
         )}
-        
         <div className="grid md:grid-cols-2 gap-4 mb-3">
           <div>
             <div className="text-sm font-medium mb-1">Win Probabilities</div>
@@ -154,17 +157,15 @@ const DailyBettingInsights = () => {
               </div>
             </div>
           </div>
-          
           <div>
             <div className="text-sm font-medium mb-1">Quick Analysis</div>
             <div className="text-xs text-muted-foreground space-y-1">
-              {game.prediction.analysis.slice(0, 2).map((bullet, idx) => (
+              {game.prediction.analysis.slice(0, 2).map((bullet: string, idx: number) => (
                 <div key={idx}>• {bullet}</div>
               ))}
             </div>
           </div>
         </div>
-        
         <Button
           variant="outline"
           size="sm"
@@ -223,7 +224,7 @@ const DailyBettingInsights = () => {
                 Last updated: {lastUpdated.toFormat('h:mm a ZZZZ')}
               </span>
             )}
-            <span>Total games: {games.length}</span>
+            <span>Total games: {upcoming.all.length}</span>
           </div>
         </div>
 
@@ -287,6 +288,24 @@ const DailyBettingInsights = () => {
         {/* Games by League */}
         {!loading && !error && sortedLeagues.length > 0 && (
           <div className="space-y-8">
+            {/* Live Now */}
+            {live.all.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Badge variant="secondary">Live Now</Badge>
+                    {live.all.length} games
+                  </CardTitle>
+                  <CardDescription>Official live data from each league</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {live.all.map((g:any) => renderGameCard({ ...g, prediction: predict(g) }))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {sortedLeagues.map(league => (
               <Card key={league}>
                 <CardHeader>
@@ -307,6 +326,7 @@ const DailyBettingInsights = () => {
             ))}
           </div>
         )}
+
 
         {/* No Filtered Results */}
         {!loading && !error && games.length > 0 && sortedLeagues.length === 0 && (

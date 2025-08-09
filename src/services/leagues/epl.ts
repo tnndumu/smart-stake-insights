@@ -41,6 +41,34 @@ export const EPLAdapter: LeagueAdapter = {
       console.warn('EPL adapter failed:', error);
       return [];
     }
+  },
+  async fetchLive() {
+    try {
+      const today = new Date().toISOString().slice(0,10);
+      const j = await getFixtures(today);
+      const items = j?.content ?? [];
+      return items
+        .filter((f:any)=> {
+          const status = (f.status || f.gameStatus || f.phase || '').toString().toUpperCase();
+          return status.includes('LIVE') || status.includes('IN_PLAY') || status.includes('IN-PROGRESS');
+        })
+        .map((f:any): Game => {
+          const kick = f.kickoff?.label || f.kickoff?.millis;
+          const iso = typeof kick === 'number' ? new Date(kick).toISOString() : new Date(kick).toISOString();
+          return {
+            id: String(f.id),
+            league: 'EPL',
+            startUtc: iso,
+            home: f.teams?.[0]?.team?.name || f.homeTeam?.name || 'Unknown',
+            away: f.teams?.[1]?.team?.name || f.awayTeam?.name || 'Unknown',
+            venue: f.ground?.name,
+            extra: f,
+          };
+        });
+    } catch (error) {
+      console.warn('EPL live failed:', error);
+      return [];
+    }
   }
 };
 

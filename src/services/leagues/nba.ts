@@ -31,6 +31,28 @@ export const NBAAdapter: LeagueAdapter = {
       console.warn('NBA adapter failed:', error);
       return [];
     }
+  },
+  async fetchLive() {
+    try {
+      const r = await fetch('https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json');
+      if (!r.ok) return [];
+      const j = await r.json();
+      const games = j?.scoreboard?.games ?? [];
+      return games
+        .filter((g:any)=> g.gameStatus === 2)
+        .map((g:any): Game => ({
+          id: String(g.gameId || g.gameID || g.gameCode),
+          league: 'NBA',
+          startUtc: g.gameTimeUTC || new Date().toISOString(),
+          home: g.homeTeam?.teamName || g.homeTeam?.teamTricode || 'Unknown',
+          away: g.awayTeam?.teamName || g.awayTeam?.teamTricode || 'Unknown',
+          venue: g.arenaName,
+          extra: g
+        }));
+    } catch (error) {
+      console.warn('NBA live failed:', error);
+      return [];
+    }
   }
 };
 

@@ -25,6 +25,37 @@ export const MLBAdapter: LeagueAdapter = {
       }
     }
     return games;
+  },
+  async fetchLive() {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const url = `${BASE}/schedule?sportId=1&date=${today}`;
+      const r = await fetch(url);
+      if (!r.ok) return [];
+      const j = await r.json();
+      const dates = j?.dates ?? [];
+      const live: Game[] = [];
+      for (const d of dates) {
+        for (const g of (d.games ?? [])) {
+          const state = g?.status?.detailedState || '';
+          if (/In Progress|Live/i.test(state)) {
+            live.push({
+              id: String(g.gamePk),
+              league: 'MLB',
+              startUtc: g.gameDate,
+              home: g.teams?.home?.team?.name || 'Unknown',
+              away: g.teams?.away?.team?.name || 'Unknown',
+              venue: g.venue?.name,
+              extra: g
+            });
+          }
+        }
+      }
+      return live;
+    } catch (e) {
+      console.warn('MLB live failed:', e);
+      return [];
+    }
   }
 };
 
