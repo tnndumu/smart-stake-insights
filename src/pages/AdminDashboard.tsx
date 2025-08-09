@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Shield, Plus, Edit, Trash2, Users, CreditCard, RefreshCw } from 'lucide-react';
+import { Shield, Plus, Edit, Trash2, Users, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -17,20 +17,20 @@ import { useNavigate } from 'react-router-dom';
 interface Bet {
   id: string;
   sport: string;
-  home_team: string;
-  away_team: string;
-  odds: number;
+  team_home: string;
+  team_away: string;
+  odds_home: number;
   prediction_confidence: number;
   reasoning: string;
   category: 'regular' | 'premium';
   game_date: string;
-  game_time: string;
+  start_time: string;
 }
 
 interface Profile {
   id: string;
   email: string;
-  full_name: string;
+  display_name: string | null;
   role: string;
   created_at: string;
 }
@@ -41,14 +41,14 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({
     sport: '',
-    home_team: '',
-    away_team: '',
-    odds: '',
+    team_home: '',
+    team_away: '',
+    odds_home: '',
     prediction_confidence: '',
     reasoning: '',
     category: 'premium' as 'regular' | 'premium',
     game_date: '',
-    game_time: '',
+    start_time: '',
   });
   const [editingBet, setEditingBet] = useState<string | null>(null);
   const { user } = useAuth();
@@ -70,9 +70,9 @@ const AdminDashboard = () => {
         .from('profiles')
         .select('role')
         .eq('user_id', user.id)
-        .maybeSingle();
+        .single();
 
-      if (error || !profile || profile.role !== 'admin') {
+      if (error || profile?.role !== 'admin') {
         toast({
           title: "Access Denied",
           description: "You don't have admin permissions",
@@ -126,9 +126,16 @@ const AdminDashboard = () => {
     
     try {
       const betData = {
-        ...formData,
-        odds: parseFloat(formData.odds),
+        sport: formData.sport,
+        team_home: formData.team_home,
+        team_away: formData.team_away,
+        odds_home: parseFloat(formData.odds_home),
+        prediction: `${formData.team_home} to win`,
         prediction_confidence: parseInt(formData.prediction_confidence),
+        reasoning: formData.reasoning,
+        category: formData.category,
+        game_date: formData.game_date,
+        start_time: new Date(`${formData.game_date}T${formData.start_time}`).toISOString(),
       };
 
       if (editingBet) {
@@ -170,14 +177,14 @@ const AdminDashboard = () => {
   const handleEdit = (bet: Bet) => {
     setFormData({
       sport: bet.sport,
-      home_team: bet.home_team,
-      away_team: bet.away_team,
-      odds: bet.odds.toString(),
+      team_home: bet.team_home,
+      team_away: bet.team_away,
+      odds_home: bet.odds_home.toString(),
       prediction_confidence: bet.prediction_confidence.toString(),
       reasoning: bet.reasoning,
       category: bet.category,
       game_date: bet.game_date,
-      game_time: bet.game_time,
+      start_time: new Date(bet.start_time).toTimeString().slice(0, 5),
     });
     setEditingBet(bet.id);
   };
@@ -211,14 +218,14 @@ const AdminDashboard = () => {
   const resetForm = () => {
     setFormData({
       sport: '',
-      home_team: '',
-      away_team: '',
-      odds: '',
+      team_home: '',
+      team_away: '',
+      odds_home: '',
       prediction_confidence: '',
       reasoning: '',
       category: 'premium',
       game_date: '',
-      game_time: '',
+      start_time: '',
     });
     setEditingBet(null);
   };
@@ -228,7 +235,7 @@ const AdminDashboard = () => {
       const { error } = await supabase
         .from('profiles')
         .update({ role: newRole })
-        .eq('id', userId);
+        .eq('user_id', userId);
 
       if (error) throw error;
       
@@ -336,21 +343,21 @@ const AdminDashboard = () => {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="home_team">Home Team</Label>
+                        <Label htmlFor="team_home">Home Team</Label>
                         <Input
-                          id="home_team"
-                          value={formData.home_team}
-                          onChange={(e) => setFormData({...formData, home_team: e.target.value})}
+                          id="team_home"
+                          value={formData.team_home}
+                          onChange={(e) => setFormData({...formData, team_home: e.target.value})}
                           required
                         />
                       </div>
                       
                       <div className="space-y-2">
-                        <Label htmlFor="away_team">Away Team</Label>
+                        <Label htmlFor="team_away">Away Team</Label>
                         <Input
-                          id="away_team"
-                          value={formData.away_team}
-                          onChange={(e) => setFormData({...formData, away_team: e.target.value})}
+                          id="team_away"
+                          value={formData.team_away}
+                          onChange={(e) => setFormData({...formData, team_away: e.target.value})}
                           required
                         />
                       </div>
@@ -358,13 +365,13 @@ const AdminDashboard = () => {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="odds">Odds</Label>
+                        <Label htmlFor="odds_home">Home Team Odds</Label>
                         <Input
-                          id="odds"
+                          id="odds_home"
                           type="number"
                           step="0.01"
-                          value={formData.odds}
-                          onChange={(e) => setFormData({...formData, odds: e.target.value})}
+                          value={formData.odds_home}
+                          onChange={(e) => setFormData({...formData, odds_home: e.target.value})}
                           required
                         />
                       </div>
@@ -396,12 +403,12 @@ const AdminDashboard = () => {
                       </div>
                       
                       <div className="space-y-2">
-                        <Label htmlFor="game_time">Game Time</Label>
+                        <Label htmlFor="start_time">Game Time</Label>
                         <Input
-                          id="game_time"
+                          id="start_time"
                           type="time"
-                          value={formData.game_time}
-                          onChange={(e) => setFormData({...formData, game_time: e.target.value})}
+                          value={formData.start_time}
+                          onChange={(e) => setFormData({...formData, start_time: e.target.value})}
                           required
                         />
                       </div>
@@ -458,9 +465,9 @@ const AdminDashboard = () => {
                             </Button>
                           </div>
                         </div>
-                        <h4 className="font-semibold">{bet.away_team} vs {bet.home_team}</h4>
+                        <h4 className="font-semibold">{bet.team_away} vs {bet.team_home}</h4>
                         <p className="text-sm text-muted-foreground">
-                          {bet.game_date} at {bet.game_time} | Confidence: {bet.prediction_confidence}%
+                          {bet.game_date} | Confidence: {bet.prediction_confidence}%
                         </p>
                       </div>
                     ))}
@@ -484,7 +491,7 @@ const AdminDashboard = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Email</TableHead>
-                      <TableHead>Full Name</TableHead>
+                      <TableHead>Display Name</TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead>Joined</TableHead>
                       <TableHead>Actions</TableHead>
@@ -494,7 +501,7 @@ const AdminDashboard = () => {
                     {profiles.map((profile) => (
                       <TableRow key={profile.id}>
                         <TableCell>{profile.email}</TableCell>
-                        <TableCell>{profile.full_name || 'N/A'}</TableCell>
+                        <TableCell>{profile.display_name || 'N/A'}</TableCell>
                         <TableCell>
                           <Badge variant={profile.role === 'admin' ? 'default' : 'secondary'}>
                             {profile.role}
@@ -511,6 +518,7 @@ const AdminDashboard = () => {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="user">User</SelectItem>
+                              <SelectItem value="subscriber">Subscriber</SelectItem>
                               <SelectItem value="admin">Admin</SelectItem>
                             </SelectContent>
                           </Select>
