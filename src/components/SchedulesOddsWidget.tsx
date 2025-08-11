@@ -270,8 +270,24 @@ function formatBestMoneyline(odds: OddsData | null): string {
   
   const awayProb = impliedProbability(bestAway.price);
   const homeProb = impliedProbability(bestHome.price);
+  const favPct = Math.max(awayProb || 0, homeProb || 0);
   
-  return `${bestAway.price > 0 ? '+' : ''}${bestAway.price} / ${bestHome.price > 0 ? '+' : ''}${bestHome.price}<br><span class="text-muted-foreground text-xs">${formatPercent(awayProb)} / ${formatPercent(homeProb)}</span>`;
+  function escapeHtml(text: string) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+  
+  return `
+    <div class="relative p-2 border border-border rounded-lg" role="group" aria-label="Best moneyline across books">
+      <div class="absolute inset-0 pointer-events-none rounded-lg bg-gradient-to-r from-yellow-400/20 to-transparent" style="width: ${(favPct * 100).toFixed(0)}%"></div>
+      <div class="relative font-semibold">${bestAway.price > 0 ? '+' : ''}${bestAway.price} / ${bestHome.price > 0 ? '+' : ''}${bestHome.price}</div>
+      <div class="relative text-xs opacity-90 flex gap-2 flex-wrap mt-1">
+        <span>${formatPercent(awayProb)} / ${formatPercent(homeProb)}</span>
+        <span class="px-2 py-0.5 border border-border rounded-full">${escapeHtml(bestAway.bookmaker)}</span>
+        <span class="px-2 py-0.5 border border-border rounded-full">${escapeHtml(bestHome.bookmaker)}</span>
+      </div>
+    </div>`;
 }
 
 function formatBestSpread(odds: OddsData | null): string {
@@ -291,7 +307,20 @@ function formatBestSpread(odds: OddsData | null): string {
   const bestSpread = spreadMarkets.sort((a, b) => b.price - a.price)[0];
   if (!bestSpread) return '—';
   
-  return `${bestSpread.point} @ ${bestSpread.price > 0 ? '+' : ''}${bestSpread.price}`;
+  function escapeHtml(text: string) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+  
+  return `
+    <div class="relative p-2 border border-border rounded-lg" role="group" aria-label="Best spread">
+      <div class="absolute inset-0 pointer-events-none rounded-lg bg-gradient-to-r from-yellow-400/20 to-transparent" style="width: 100%"></div>
+      <div class="relative font-semibold">${escapeHtml(bestSpread.name)} ${bestSpread.point != null ? escapeHtml(bestSpread.point.toString()) : ''} @ ${bestSpread.price > 0 ? '+' : ''}${bestSpread.price}</div>
+      <div class="relative text-xs opacity-90 mt-1">
+        <span class="px-2 py-0.5 border border-border rounded-full">${escapeHtml(bestSpread.bookmaker)}</span>
+      </div>
+    </div>`;
 }
 
 function formatBestTotal(odds: OddsData | null): string {
@@ -316,12 +345,23 @@ function formatBestTotal(odds: OddsData | null): string {
   
   if (!bestOver && !bestUnder) return '—';
   
-  let result = '';
-  if (bestOver) result += `O ${bestOver.point} @ ${bestOver.price > 0 ? '+' : ''}${bestOver.price}`;
-  if (bestOver && bestUnder) result += ' / ';
-  if (bestUnder) result += `U ${bestUnder.point} @ ${bestUnder.price > 0 ? '+' : ''}${bestUnder.price}`;
+  function escapeHtml(text: string) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
   
-  return result;
+  return `
+    <div class="relative p-2 border border-border rounded-lg" role="group" aria-label="Best totals">
+      <div class="absolute inset-0 pointer-events-none rounded-lg bg-gradient-to-r from-yellow-400/20 to-transparent" style="width: 100%"></div>
+      <div class="relative font-semibold">
+        ${bestOver ? `O ${bestOver.point} @ ${bestOver.price > 0 ? '+' : ''}${bestOver.price}` : ''} ${bestOver && bestUnder ? ' / ' : ''} ${bestUnder ? `U ${bestUnder.point} @ ${bestUnder.price > 0 ? '+' : ''}${bestUnder.price}` : ''}
+      </div>
+      <div class="relative text-xs opacity-90 flex gap-2 flex-wrap mt-1">
+        ${bestOver ? `<span class="px-2 py-0.5 border border-border rounded-full">${escapeHtml(bestOver.bookmaker)}</span>` : ''}
+        ${bestUnder ? `<span class="px-2 py-0.5 border border-border rounded-full">${escapeHtml(bestUnder.bookmaker)}</span>` : ''}
+      </div>
+    </div>`;
 }
 
 export default function SchedulesOddsWidget() {
