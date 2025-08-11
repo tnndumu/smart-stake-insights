@@ -79,12 +79,12 @@ const AnalysisSection = () => {
               Ready to elevate your betting strategy?
             </h3>
             <p className="text-muted-foreground mb-6 text-lg">
-              Join thousands of successful bettors who trust our analysis for consistent profits
+              Access professional betting analysis and real-time data insights
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button size="lg" className="bg-gradient-to-r from-primary to-warning hover:opacity-90">
                 <BarChart3 className="h-5 w-5 mr-2" />
-                Access Full Analysis
+                View Analysis Tools
               </Button>
             </div>
           </div>

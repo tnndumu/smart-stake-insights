@@ -10,9 +10,6 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
-  isSubscriber: boolean;
-  subscriptionTier: string | null;
-  refreshSubscription: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -29,28 +26,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isSubscriber, setIsSubscriber] = useState(false);
-  const [subscriptionTier, setSubscriptionTier] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const refreshSubscription = async () => {
-    if (!session?.access_token) return;
-    
-    try {
-      const { data, error } = await supabase.functions.invoke('check-subscription', {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
-      
-      if (error) throw error;
-      
-      setIsSubscriber(data?.subscribed || false);
-      setSubscriptionTier(data?.subscription_tier || null);
-    } catch (error) {
-      console.error('Error checking subscription:', error);
-    }
-  };
 
   useEffect(() => {
     // Set up auth state listener
@@ -62,12 +39,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Refresh subscription status when auth state changes
         if (session?.user) {
-          setTimeout(() => {
-            refreshSubscription();
-          }, 0);
-        } else {
-          setIsSubscriber(false);
-          setSubscriptionTier(null);
+          setSession(session);
         }
       }
     );
@@ -79,9 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
       
       if (session?.user) {
-        setTimeout(() => {
-          refreshSubscription();
-        }, 0);
+        setSession(session);
       }
     });
 
@@ -160,9 +130,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signUp,
     signIn,
     signOut,
-    isSubscriber,
-    subscriptionTier,
-    refreshSubscription,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

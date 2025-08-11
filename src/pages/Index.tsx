@@ -3,7 +3,7 @@ import Hero from "@/components/Hero";
 import PredictionsSection from "@/components/PredictionsSection";
 import StatsSection from "@/components/StatsSection";
 import AnalysisSection from "@/components/AnalysisSection";
-import SchedulesWidget from "@/components/SchedulesWidget";
+import SchedulesOddsWidget from "@/components/SchedulesOddsWidget";
 
 const Index = () => {
   return (
@@ -11,7 +11,7 @@ const Index = () => {
       <Header />
       <main>
         <Hero />
-        <SchedulesWidget />
+        <SchedulesOddsWidget />
         <PredictionsSection />
         <StatsSection />
         <AnalysisSection />
