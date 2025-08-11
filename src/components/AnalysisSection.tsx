@@ -86,10 +86,6 @@ const AnalysisSection = () => {
                 <BarChart3 className="h-5 w-5 mr-2" />
                 Access Full Analysis
               </Button>
-              <Button variant="outline" size="lg">
-                <Users className="h-5 w-5 mr-2" />
-                Join Community
-              </Button>
             </div>
           </div>
         </div>

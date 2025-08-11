@@ -2,20 +2,9 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Trophy, Lock, Crown } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
+import { Trophy, Crown } from 'lucide-react';
 
 const SimpleDailyInsights = () => {
-  const { user, isSubscriber } = useAuth();
-
-  const handleSubscribe = () => {
-    if (!user) {
-      window.location.href = '/auth';
-      return;
-    }
-    // Stripe checkout will work once secret key is configured
-    alert('Please configure Stripe secret key in Supabase Edge Functions settings');
-  };
 
   const mockBets = [
     {
@@ -80,26 +69,9 @@ const SimpleDailyInsights = () => {
                   <CardDescription>Today's top 5 premium predictions</CardDescription>
                 </div>
               </div>
-              {!isSubscriber && (
-                <Button onClick={handleSubscribe} className="bg-gradient-to-r from-primary to-warning">
-                  Subscribe Now
-                </Button>
-              )}
             </div>
           </CardHeader>
-          <CardContent>
-            {!isSubscriber ? (
-              <div className="text-center py-8">
-                <Lock className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-xl font-semibold mb-2">Subscribe to unlock today's top 5 premium bets</h3>
-                <p className="text-muted-foreground mb-6">
-                  Get access to our highest confidence predictions with detailed analysis
-                </p>
-                <Button onClick={handleSubscribe} size="lg" className="bg-gradient-to-r from-primary to-warning">
-                  Subscribe Now - $9.99/month
-                </Button>
-              </div>
-            ) : (
+            <CardContent>
               <div className="space-y-4">
                 {mockPremiumBets.map((bet, index) => (
                   <Card key={bet.id} className="border-warning/30">
@@ -126,8 +98,7 @@ const SimpleDailyInsights = () => {
                   </Card>
                 ))}
               </div>
-            )}
-          </CardContent>
+            </CardContent>
         </Card>
 
         {/* Regular Bets */}
