@@ -109,7 +109,7 @@ const Auth = () => {
               <CardHeader>
                 <CardTitle>Create Account</CardTitle>
                 <CardDescription>
-                  Join WinPicks Pro to access premium betting insights.
+                  Create your account to get started.
                 </CardDescription>
               </CardHeader>
               <CardContent>
