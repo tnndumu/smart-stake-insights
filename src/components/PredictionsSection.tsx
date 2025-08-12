@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { fetchLiveGames, fetchUpcomingGames } from "@/services/leagues/all";
 import { predict } from "@/services/predict";
 import { DateTime } from "luxon";
+import { fetchESPNOdds } from '@/services/providers';
 
 // === Odds helpers for PredictionsSection ===
 type OddsRow = {
@@ -146,7 +147,23 @@ async function fetchLeagueOddsPS(league: string): Promise<OddsRow[]> {
 
   const res = await fetch(url.toString());
   if (!res.ok) return [];
-  return await res.json();
+  const flat = await res.json();
+  console.log(`fetchLeagueOddsPS(${league}): ${flat.length} odds rows`);
+  
+  if (flat.length) return flat;
+
+  // Fallback: ESPN
+  const lgMap: Record<string,string> = { mlb:'MLB', nba:'NBA', nhl:'NHL', nfl:'NFL', mls:'MLS' };
+  const dateStr = DateTime.now().toFormat('yyyy-MM-dd');
+  const espn = await fetchESPNOdds(lgMap[league] || league.toUpperCase(), dateStr);
+  console.log(`ESPN fallback for ${league}: ${espn.length} rows`);
+  return espn.map(row => ({ 
+    sportKey: sportKey,
+    start: row.start,
+    home: row.home,
+    away: row.away,
+    books: row.books
+  }));
 }
 
 function pickBestSpread(row: OddsRow | null) {
@@ -442,7 +459,7 @@ const PredictionsSection = () => {
               <p className="text-sm text-muted-foreground mb-4">
                 {prediction.market && (prediction.market.homePrice || prediction.market.awayPrice)
                   ? `Market ML: ${prediction.away} ${prediction.market.awayPrice>0?'+':''}${prediction.market.awayPrice ?? 'not yet'} / ${prediction.home} ${prediction.market.homePrice>0?'+':''}${prediction.market.homePrice ?? 'not yet'}`
-                  : 'not yet'}
+                   : 'not yet'}
               </p>
 
               <Button variant="outline" size="sm" className="w-full group-hover:border-primary/50" onClick={() => { setActive(prediction); setOpen(true); }}>

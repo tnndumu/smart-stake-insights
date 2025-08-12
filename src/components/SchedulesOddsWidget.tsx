@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { fetchESPNOdds } from '@/services/providers';
 
 // Helper types
 interface Row {
@@ -255,7 +256,7 @@ async function fetchScheduleForLeague(league: string, date: string, backend: str
   return [];
 }
 
-async function fetchOddsForLeague(league: string, oddsProvider: string, oddsKey: string, oddsRegion: string, oddsBookmakers: string, soccerKeys: string[]): Promise<OddsData[]> {
+async function fetchOddsForLeague(league: string, oddsProvider: string, oddsKey: string, oddsRegion: string, oddsBookmakers: string, soccerKeys: string[], date?: string): Promise<OddsData[]> {
   const keys = league === 'soccer' ? soccerKeys : [SPORT_KEYS[league]].filter(Boolean);
   if (!keys.length) return [];
   
@@ -302,7 +303,17 @@ async function fetchOddsForLeague(league: string, oddsProvider: string, oddsKey:
     }
   }));
   
-  return results.flat();
+  const merged = results.flat();
+  console.log(`fetchOddsForLeague(${league}, ${date}): ${merged.length} odds rows`);
+  
+  if (merged.length) return merged;
+
+  // Fallback: ESPN
+  const lgMap: Record<string,string> = { mlb:'MLB', nba:'NBA', nhl:'NHL', nfl:'NFL', mls:'MLS' };
+  const dateFormatted = date || todayYYYYMMDD();
+  const espn = await fetchESPNOdds(lgMap[league] || league.toUpperCase(), dateFormatted);
+  console.log(`ESPN fallback for ${league}: ${espn.length} rows`);
+  return espn.map(row => ({ sportKey: keys[0] || '', start: row.start, home: row.home, away: row.away, books: row.books }));
 }
 
 function formatBestMoneyline(odds: OddsData | null): string {
@@ -476,7 +487,7 @@ export default function SchedulesOddsWidget() {
       // Fetch schedules and odds in parallel
       const [scheduleResults, oddsResults] = await Promise.all([
         Promise.all(selected.map(league => fetchScheduleForLeague(league, date, backend))),
-        Promise.all(selected.map(league => fetchOddsForLeague(league, oddsProvider, oddsKey, oddsRegion, oddsBookmakers, soccerKeys)))
+        Promise.all(selected.map(league => fetchOddsForLeague(league, oddsProvider, oddsKey, oddsRegion, oddsBookmakers, soccerKeys, date)))
       ]);
 
       const schedules = scheduleResults.flat();
