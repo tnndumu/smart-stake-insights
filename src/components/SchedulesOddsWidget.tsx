@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchESPNOdds, consensusRow, canonicalMLB, canonicalSoccer, type NormalizedOddsRow } from '@/services/providers';
+import { fetchESPNRows, extractESPNFor } from '@/services/espn-now';
 import { DateTime } from 'luxon';
 
 // Helper types

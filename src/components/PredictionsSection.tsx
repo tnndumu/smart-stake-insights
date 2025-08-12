@@ -7,6 +7,7 @@ import { fetchLiveGames, fetchUpcomingGames } from "@/services/leagues/all";
 import { predict } from "@/services/predict";
 import { DateTime } from "luxon";
 import { fetchESPNOdds, consensusRow, canonicalMLB, canonicalSoccer, type NormalizedOddsRow } from '@/services/providers';
+import { fetchESPNRows, extractESPNFor } from '@/services/espn-now';
 
 // === Odds helpers for PredictionsSection ===
 type OddsRow = {
@@ -326,10 +327,11 @@ const PredictionsSection = () => {
       }
       // fetch ESPN odds for consensus
       const espnOddsByLeague: Record<string, NormalizedOddsRow[]> = {};
+      const dateYYYYMMDD = DateTime.now().toFormat('yyyy-MM-dd');
+      
       for (const lg of leagues) {
         const lgMap: Record<string,string> = { MLB:'MLB', NBA:'NBA', NHL:'NHL', NFL:'NFL', MLS:'MLS' };
-        const dateStr = DateTime.now().toFormat('yyyy-MM-dd');
-        const espnOdds = await fetchESPNOdds(lgMap[lg] || lg.toUpperCase(), dateStr);
+        const espnOdds = await fetchESPNOdds(lgMap[lg] || lg.toUpperCase(), dateYYYYMMDD);
         espnOddsByLeague[lg] = espnOdds;
       }
 
