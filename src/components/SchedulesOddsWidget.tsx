@@ -404,8 +404,8 @@ export default function SchedulesOddsWidget() {
   const oddsBookmakers = useMemo(() => getEnv('ODDS_BOOKMAKERS') || 'draftkings,betmgm,fanduel,caesars', []);
   const soccerKeys = useMemo(() => (getEnv('ODDS_SOCCER_KEYS') || 'soccer_usa_mls').split(',').map(s => s.trim()).filter(Boolean), []);
   
-  const SUPABASE_URL = "https://hgcbxwttbwwschlgiigj.supabase.co";
-  const hasProxy = !!SUPABASE_URL;
+  const supabaseUrl = getEnv('SUPABASE_URL') || '';
+  const hasProxy = !!supabaseUrl;
   const hasDirectKey = !!oddsKey;
   const showOddsWarning = !hasProxy && !hasDirectKey;
 
@@ -507,11 +507,23 @@ export default function SchedulesOddsWidget() {
         )}
           
           {/* Development Debug Info */}
-          {import.meta.env.DEV && (
-            <div className="mb-4 p-3 bg-muted/10 border border-muted/20 rounded-lg text-muted-foreground">
-              <p className="text-xs">
-                🔧 Dev Info: Proxy={hasProxy ? '✓' : '✗'}, Direct Key={hasDirectKey ? '✓' : '✗'}
-              </p>
+          {process.env.NODE_ENV !== 'production' && (
+            <div className="mb-2 text-xs text-muted-foreground">
+              Dev Info: Proxy={<b>{getEnv('SUPABASE_URL') ? '✓' : '✗'}</b>}, Direct Key={<b>{getEnv('ODDS_API_KEY') || getEnv('VITE_ODDS_API_KEY') ? '✓' : '✗'}</b>}
+              <button
+                className="ml-2 px-2 py-0.5 border rounded hover:bg-muted"
+                onClick={async () => {
+                  const u = (getEnv('SUPABASE_URL') || '').replace(/\/$/, '') + '/functions/v1/odds-proxy?sport=baseball_mlb&markets=h2h&regions=us';
+                  try {
+                    const res = await fetch(u);
+                    alert('Proxy test: ' + res.status + ' - ' + (res.ok ? 'OK' : await res.text()));
+                  } catch (err) {
+                    alert('Proxy test failed: ' + err);
+                  }
+                }}
+              >
+                Test Proxy
+              </button>
             </div>
           )}
           
