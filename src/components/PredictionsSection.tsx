@@ -86,7 +86,7 @@ async function fetchLeagueOddsPS(league: string): Promise<OddsRow[]> {
   const bookmakers = getEnvPS('ODDS_BOOKMAKERS') || 'draftkings,betmgm,fanduel,caesars';
   let url = new URL(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds`);
   url.searchParams.set('regions', region);
-  url.searchParams.set('markets', 'h2h');
+  url.searchParams.set('markets', 'h2h,spreads,totals');
   url.searchParams.set('oddsFormat', 'american');
   url.searchParams.set('dateFormat', 'iso');
   url.searchParams.set('bookmakers', bookmakers);
@@ -96,7 +96,7 @@ async function fetchLeagueOddsPS(league: string): Promise<OddsRow[]> {
     const p = new URL(supabaseUrl.replace(/\/$/, '') + '/functions/v1/odds-proxy');
     p.searchParams.set('sport', sportKey);
     p.searchParams.set('regions', region);
-    p.searchParams.set('markets', 'h2h');
+    p.searchParams.set('markets', 'h2h,spreads,totals');
     p.searchParams.set('bookmakers', bookmakers);
     url = p;
   } else {
@@ -108,6 +108,86 @@ async function fetchLeagueOddsPS(league: string): Promise<OddsRow[]> {
   const res = await fetch(url.toString());
   if (!res.ok) return [];
   return await res.json();
+}
+
+function pickBestSpread(row: OddsRow | null) {
+  if (!row) return null;
+  let bestHome: any = null, bestAway: any = null;
+  for (const b of row.books) {
+    for (const m of (b.markets || []).filter(m => m.key === 'spreads')) {
+      for (const o of m.outcomes || []) {
+        const isHome = normNamePS(o.name) === normNamePS(row.home);
+        const entry = { price: o.price, point: o.point, book: (b.bookmaker || b.key || '').toString() };
+        const prev = isHome ? bestHome : bestAway;
+        const prevProb = prev ? (impliedProb(prev.price) ?? 1) : 1;
+        const nowProb = impliedProb(o.price) ?? 1;
+        if (!prev || nowProb < prevProb) {
+          if (isHome) bestHome = entry; else bestAway = entry;
+        }
+      }
+    }
+  }
+  return { home: bestHome, away: bestAway };
+}
+
+function pickBestTotal(row: OddsRow | null) {
+  if (!row) return null;
+  let bestOver: any = null, bestUnder: any = null;
+  for (const b of row.books) {
+    for (const m of (b.markets || []).filter(m => m.key === 'totals')) {
+      for (const o of m.outcomes || []) {
+        const isOver = /OVER/i.test(o.name);
+        const entry = { price: o.price, point: o.point, book: (b.bookmaker || b.key || '').toString() };
+        const prev = isOver ? bestOver : bestUnder;
+        const prevProb = prev ? (impliedProb(prev.price) ?? 1) : 1;
+        const nowProb = impliedProb(o.price) ?? 1;
+        if (!prev || nowProb < prevProb) {
+          if (isOver) bestOver = entry; else bestUnder = entry;
+        }
+      }
+    }
+  }
+  return { over: bestOver, under: bestUnder };
+}
+
+function buildBookTable(row: OddsRow | null) {
+  if (!row) return [];
+  const table: Array<any> = [];
+  for (const b of row.books) {
+    const rec: any = { book: (b.bookmaker || b.key || '').toString() };
+    const byKey: Record<string, any> = {};
+    for (const m of (b.markets || [])) {
+      byKey[m.key] = m;
+    }
+    const ml = byKey['h2h'];
+    if (ml) {
+      for (const o of (ml.outcomes || [])) {
+        if (normNamePS(o.name) === normNamePS(row.home)) rec.mlHome = o.price;
+        if (normNamePS(o.name) === normNamePS(row.away)) rec.mlAway = o.price;
+      }
+    }
+    const sp = byKey['spreads'];
+    if (sp) {
+      for (const o of (sp.outcomes || [])) {
+        if (normNamePS(o.name) === normNamePS(row.home)) { rec.spHome = o.price; rec.spHomePt = o.point; }
+        if (normNamePS(o.name) === normNamePS(row.away)) { rec.spAway = o.price; rec.spAwayPt = o.point; }
+      }
+    }
+    const tot = byKey['totals'];
+    if (tot) {
+      for (const o of (tot.outcomes || [])) {
+        if (/OVER/i.test(o.name)) { rec.over = o.price; rec.overPt = o.point; }
+        if (/UNDER/i.test(o.name)) { rec.under = o.price; rec.underPt = o.point; }
+      }
+    }
+    table.push(rec);
+  }
+  table.sort((a,b) => {
+    const ap = impliedProb(a.mlHome ?? 0) ?? 1;
+    const bp = impliedProb(b.mlHome ?? 0) ?? 1;
+    return ap - bp;
+  });
+  return table;
 }
 
 function matchOddsPS(list: OddsRow[], away: string, home: string): OddsRow | null {
@@ -173,7 +253,7 @@ const PredictionsSection = () => {
             awayBook: awayBest?.book,
           };
         }
-        return { ...g, market: best };
+        return { ...g, market: best, marketMatched: matched };
       });
       
       const sortedWithOdds = withOdds
@@ -356,23 +436,61 @@ const PredictionsSection = () => {
               </div>
               <div className="space-y-2">
                 <h4 className="font-semibold">Market</h4>
-                {active.market ? (
-                  <div className="text-sm">
-                    <div>Home ML: {active.market.homePrice>0?'+':''}{active.market.homePrice ?? '—'} {active.market.homeBook ? `(${active.market.homeBook})` : ''}</div>
-                    <div>Away ML: {active.market.awayPrice>0?'+':''}{active.market.awayPrice ?? '—'} {active.market.awayBook ? `(${active.market.awayBook})` : ''}</div>
-                    <div className="mt-1">Implied: Home {active.market.homeProb ? (active.market.homeProb*100).toFixed(1)+'%' : '—'} / Away {active.market.awayProb ? (active.market.awayProb*100).toFixed(1)+'%' : '—'}</div>
-                    <div className="mt-2 text-sm">
-                      Edge: {
-                        (() => {
-                          const favIsHome = active.prediction.probHome >= active.prediction.probAway;
-                          const model = favIsHome ? active.prediction.probHome : active.prediction.probAway;
-                          const market = favIsHome ? (active.market.homeProb ?? null) : (active.market.awayProb ?? null);
-                          return market ? ((model - market) * 100).toFixed(1) + ' pp' : 'n/a';
-                        })()
-                      }
+                {(() => {
+                  const row = active.marketMatched || active.marketSource || active.oddsRow || null;
+                  const spread = pickBestSpread(row);
+                  const total = pickBestTotal(row);
+                  const table = buildBookTable(row);
+                  
+                  return (
+                    <div className="text-sm space-y-2">
+                      {active.market ? (
+                        <div>
+                          <div>Home ML: {active.market.homePrice>0?'+':''}{active.market.homePrice ?? '—'} {active.market.homeBook ? `(${active.market.homeBook})` : ''}</div>
+                          <div>Away ML: {active.market.awayPrice>0?'+':''}{active.market.awayPrice ?? '—'} {active.market.awayBook ? `(${active.market.awayBook})` : ''}</div>
+                          <div className="mt-1">Implied: Home {active.market.homeProb ? (active.market.homeProb*100).toFixed(1)+'%' : '—'} / Away {active.market.awayProb ? (active.market.awayProb*100).toFixed(1)+'%' : '—'}</div>
+                        </div>
+                      ) : <div className="text-muted-foreground">No ML matched.</div>}
+                      
+                      <div className="mt-2">
+                        <div><strong>Best Spread</strong>: {spread?.away ? `${active.away} ${spread.away.point>0?'+':''}${spread.away.point} (${spread.away.price>0?'+':''}${spread.away.price})` : '—'} / {spread?.home ? `${active.home} ${spread.home.point>0?'+':''}${spread.home.point} (${spread.home.price>0?'+':''}${spread.home.price})` : '—'}</div>
+                        <div><strong>Best Total</strong>: {total?.over ? `Over ${total.over.point} (${total.over.price>0?'+':''}${total.over.price})` : '—'} / {total?.under ? `Under ${total.under.point} (${total.under.price>0?'+':''}${total.under.price})` : '—'}</div>
+                      </div>
+                      
+                      <div className="mt-3">
+                        <h5 className="font-medium mb-1">Book-by-book</h5>
+                        <div className="overflow-x-auto border rounded">
+                          <table className="min-w-full text-xs">
+                            <thead className="bg-muted/30">
+                              <tr>
+                                <th className="px-2 py-1 text-left">Book</th>
+                                <th className="px-2 py-1 text-left">ML Away</th>
+                                <th className="px-2 py-1 text-left">ML Home</th>
+                                <th className="px-2 py-1 text-left">Away Spread</th>
+                                <th className="px-2 py-1 text-left">Home Spread</th>
+                                <th className="px-2 py-1 text-left">Over</th>
+                                <th className="px-2 py-1 text-left">Under</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {table.length ? table.map((r: any, i: number) => (
+                                <tr key={i} className="border-t">
+                                  <td className="px-2 py-1">{r.book || '—'}</td>
+                                  <td className="px-2 py-1">{r.mlAway>0?'+':''}{r.mlAway ?? '—'}</td>
+                                  <td className="px-2 py-1">{r.mlHome>0?'+':''}{r.mlHome ?? '—'}</td>
+                                  <td className="px-2 py-1">{r.spAwayPt ? `${r.spAwayPt>0?'+':''}${r.spAwayPt}` : '—'} {r.spAway!=null ? `(${r.spAway>0?'+':''}${r.spAway})` : ''}</td>
+                                  <td className="px-2 py-1">{r.spHomePt ? `${r.spHomePt>0?'+':''}${r.spHomePt}` : '—'} {r.spHome!=null ? `(${r.spHome>0?'+':''}${r.spHome})` : ''}</td>
+                                  <td className="px-2 py-1">{r.overPt ?? '—'} {r.over!=null ? `(${r.over>0?'+':''}${r.over})` : ''}</td>
+                                  <td className="px-2 py-1">{r.underPt ?? '—'} {r.under!=null ? `(${r.under>0?'+':''}${r.under})` : ''}</td>
+                                </tr>
+                              )) : <tr><td className="px-2 py-2 text-muted-foreground" colSpan={7}>No bookmaker data.</td></tr>}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ) : <p className="text-muted-foreground">No market odds matched for this game.</p>}
+                  );
+                })()}
               </div>
             </div>
           </div>
