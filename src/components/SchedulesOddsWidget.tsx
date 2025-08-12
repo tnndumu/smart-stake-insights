@@ -98,18 +98,62 @@ function normalizeName(name: string): string {
   return String(name || '').toUpperCase().replace(/[^A-Z0-9 ]+/g, '').replace(/\s+/g, ' ').trim();
 }
 
+function nicknameToken(name: string): string {
+  const n = normalizeName(name);
+  // Handle MLB nicknames like Yankees, Red Sox, Blue Jays, White Sox
+  if (n.includes('YANKEES')) return 'YANKEES';
+  if (n.includes('RED SOX')) return 'RED SOX';
+  if (n.includes('BLUE JAYS')) return 'BLUE JAYS';
+  if (n.includes('WHITE SOX')) return 'WHITE SOX';
+  if (n.includes('DODGERS')) return 'DODGERS';
+  if (n.includes('GIANTS')) return 'GIANTS';
+  if (n.includes('METS')) return 'METS';
+  if (n.includes('CUBS')) return 'CUBS';
+  if (n.includes('PADRES')) return 'PADRES';
+  if (n.includes('PHILLIES')) return 'PHILLIES';
+  if (n.includes('BRAVES')) return 'BRAVES';
+  if (n.includes('MARLINS')) return 'MARLINS';
+  if (n.includes('NATIONALS')) return 'NATIONALS';
+  if (n.includes('CARDINALS')) return 'CARDINALS';
+  if (n.includes('BREWERS')) return 'BREWERS';
+  if (n.includes('REDS')) return 'REDS';
+  if (n.includes('PIRATES')) return 'PIRATES';
+  if (n.includes('ASTROS')) return 'ASTROS';
+  if (n.includes('RANGERS')) return 'RANGERS';
+  if (n.includes('MARINERS')) return 'MARINERS';
+  if (n.includes('ATHLETICS')) return 'ATHLETICS';
+  if (n.includes('ANGELS')) return 'ANGELS';
+  if (n.includes('TWINS')) return 'TWINS';
+  if (n.includes('GUARDIANS')) return 'GUARDIANS';
+  if (n.includes('TIGERS')) return 'TIGERS';
+  if (n.includes('ROYALS')) return 'ROYALS';
+  if (n.includes('ORIOLES')) return 'ORIOLES';
+  if (n.includes('RAYS')) return 'RAYS';
+  if (n.includes('BLUE JAYS')) return 'BLUE JAYS';
+  if (n.includes('ROCKIES')) return 'ROCKIES';
+  if (n.includes('DIAMONDBACKS')) return 'DIAMONDBACKS';
+  // Return the last word as fallback
+  const words = n.split(' ');
+  return words[words.length - 1] || n;
+}
+
 function matchOdds(oddsList: OddsData[], away: string, home: string): OddsData | null {
   const awayNorm = normalizeName(away);
   const homeNorm = normalizeName(home);
+  const awayNick = nicknameToken(away);
+  const homeNick = nicknameToken(home);
   
   for (const odds of oddsList) {
     const oddsAwayNorm = normalizeName(odds.away);
     const oddsHomeNorm = normalizeName(odds.home);
+    const oddsAwayNick = nicknameToken(odds.away);
+    const oddsHomeNick = nicknameToken(odds.home);
     
-    // Exact match or contains match
+    // Exact match, contains match, or nickname match
     if ((oddsAwayNorm === awayNorm && oddsHomeNorm === homeNorm) || 
         (oddsAwayNorm.includes(awayNorm) && oddsHomeNorm.includes(homeNorm)) ||
-        (awayNorm.includes(oddsAwayNorm) && homeNorm.includes(oddsHomeNorm))) {
+        (awayNorm.includes(oddsAwayNorm) && homeNorm.includes(oddsHomeNorm)) ||
+        (oddsAwayNick === awayNick && oddsHomeNick === homeNick)) {
       return odds;
     }
   }
@@ -241,7 +285,7 @@ async function fetchOddsForLeague(league: string, oddsProvider: string, oddsKey:
       
       if (response.ok) {
         const data = await response.json();
-        console.log(`Received ${data.length} odds entries for ${sportKey}`);
+        console.log(`Odds rows ${league.toUpperCase()}: ${data.length}`);
         return (data || []).map((item: any) => ({
           sportKey,
           start: item.commence_time,
@@ -262,7 +306,7 @@ async function fetchOddsForLeague(league: string, oddsProvider: string, oddsKey:
 }
 
 function formatBestMoneyline(odds: OddsData | null): string {
-  if (!odds) return '—';
+  if (!odds) return 'not yet';
   
   const h2hMarkets = odds.books.flatMap(book => 
     (book.markets || [])
@@ -288,7 +332,7 @@ function formatBestMoneyline(odds: OddsData | null): string {
   const bestAway = awayOutcomes.sort((a, b) => b.price - a.price)[0];
   const bestHome = homeOutcomes.sort((a, b) => b.price - a.price)[0];
   
-  if (!bestAway || !bestHome) return '—';
+  if (!bestAway || !bestHome) return 'not yet';
   
   const awayProb = impliedProbability(bestAway.price);
   const homeProb = impliedProbability(bestHome.price);
@@ -313,7 +357,7 @@ function formatBestMoneyline(odds: OddsData | null): string {
 }
 
 function formatBestSpread(odds: OddsData | null): string {
-  if (!odds) return '—';
+  if (!odds) return 'not yet';
   
   const spreadMarkets = odds.books.flatMap(book => 
     (book.markets || [])
@@ -327,7 +371,7 @@ function formatBestSpread(odds: OddsData | null): string {
   );
   
   const bestSpread = spreadMarkets.sort((a, b) => b.price - a.price)[0];
-  if (!bestSpread) return '—';
+  if (!bestSpread) return 'not yet';
   
   function escapeHtml(text: string) {
     const div = document.createElement('div');
@@ -346,7 +390,7 @@ function formatBestSpread(odds: OddsData | null): string {
 }
 
 function formatBestTotal(odds: OddsData | null): string {
-  if (!odds) return '—';
+  if (!odds) return 'not yet';
   
   const totalMarkets = odds.books.flatMap(book => 
     (book.markets || [])
@@ -365,7 +409,7 @@ function formatBestTotal(odds: OddsData | null): string {
   const bestOver = overOutcomes.sort((a, b) => b.price - a.price)[0];
   const bestUnder = underOutcomes.sort((a, b) => b.price - a.price)[0];
   
-  if (!bestOver && !bestUnder) return '—';
+  if (!bestOver && !bestUnder) return 'not yet';
   
   function escapeHtml(text: string) {
     const div = document.createElement('div');

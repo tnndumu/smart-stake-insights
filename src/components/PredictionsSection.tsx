@@ -52,6 +52,45 @@ function normNamePS(s: string) {
   return String(s || '').toUpperCase().replace(/[^A-Z0-9 ]+/g, '').replace(/\s+/g, ' ').trim();
 }
 
+function nicknameTokenPS(name: string): string {
+  const n = normNamePS(name);
+  // Handle MLB nicknames like Yankees, Red Sox, Blue Jays, White Sox
+  if (n.includes('YANKEES')) return 'YANKEES';
+  if (n.includes('RED SOX')) return 'RED SOX';
+  if (n.includes('BLUE JAYS')) return 'BLUE JAYS';
+  if (n.includes('WHITE SOX')) return 'WHITE SOX';
+  if (n.includes('DODGERS')) return 'DODGERS';
+  if (n.includes('GIANTS')) return 'GIANTS';
+  if (n.includes('METS')) return 'METS';
+  if (n.includes('CUBS')) return 'CUBS';
+  if (n.includes('PADRES')) return 'PADRES';
+  if (n.includes('PHILLIES')) return 'PHILLIES';
+  if (n.includes('BRAVES')) return 'BRAVES';
+  if (n.includes('MARLINS')) return 'MARLINS';
+  if (n.includes('NATIONALS')) return 'NATIONALS';
+  if (n.includes('CARDINALS')) return 'CARDINALS';
+  if (n.includes('BREWERS')) return 'BREWERS';
+  if (n.includes('REDS')) return 'REDS';
+  if (n.includes('PIRATES')) return 'PIRATES';
+  if (n.includes('ASTROS')) return 'ASTROS';
+  if (n.includes('RANGERS')) return 'RANGERS';
+  if (n.includes('MARINERS')) return 'MARINERS';
+  if (n.includes('ATHLETICS')) return 'ATHLETICS';
+  if (n.includes('ANGELS')) return 'ANGELS';
+  if (n.includes('TWINS')) return 'TWINS';
+  if (n.includes('GUARDIANS')) return 'GUARDIANS';
+  if (n.includes('TIGERS')) return 'TIGERS';
+  if (n.includes('ROYALS')) return 'ROYALS';
+  if (n.includes('ORIOLES')) return 'ORIOLES';
+  if (n.includes('RAYS')) return 'RAYS';
+  if (n.includes('BLUE JAYS')) return 'BLUE JAYS';
+  if (n.includes('ROCKIES')) return 'ROCKIES';
+  if (n.includes('DIAMONDBACKS')) return 'DIAMONDBACKS';
+  // Return the last word as fallback
+  const words = n.split(' ');
+  return words[words.length - 1] || n;
+}
+
 function impliedProb(american: number) {
   if (!isFinite(american) || american === 0) return null;
   return american > 0 ? 100 / (american + 100) : (-american) / ((-american) + 100);
@@ -192,9 +231,13 @@ function buildBookTable(row: OddsRow | null) {
 
 function matchOddsPS(list: OddsRow[], away: string, home: string): OddsRow | null {
   const a = normNamePS(away), h = normNamePS(home);
+  const aNick = nicknameTokenPS(away), hNick = nicknameTokenPS(home);
   for (const row of list) {
-    if ((normNamePS(row.away).includes(a) && normNamePS(row.home).includes(h)) ||
-        (a.includes(normNamePS(row.away)) && h.includes(normNamePS(row.home)))) {
+    const rowA = normNamePS(row.away), rowH = normNamePS(row.home);
+    const rowANick = nicknameTokenPS(row.away), rowHNick = nicknameTokenPS(row.home);
+    if ((rowA.includes(a) && rowH.includes(h)) ||
+        (a.includes(rowA) && h.includes(rowH)) ||
+        (rowANick === aNick && rowHNick === hNick)) {
       return row;
     }
   }
@@ -235,7 +278,9 @@ const PredictionsSection = () => {
       const leagues = Array.from(new Set(accumulatedGames.map(g => g.league)));
       const oddsByLeague: Record<string, OddsRow[]> = {};
       for (const lg of leagues) {
-        oddsByLeague[lg] = await fetchLeagueOddsPS(lg);
+        const odds = await fetchLeagueOddsPS(lg);
+        console.log(`Odds rows ${lg}: ${odds.length}`);
+        oddsByLeague[lg] = odds;
       }
       const withOdds = [...accumulatedGames].map(g => {
         const matched = matchOddsPS(oddsByLeague[g.league] || [], g.away, g.home);
@@ -396,8 +441,8 @@ const PredictionsSection = () => {
 
               <p className="text-sm text-muted-foreground mb-4">
                 {prediction.market && (prediction.market.homePrice || prediction.market.awayPrice)
-                  ? `Market ML: ${prediction.away} ${prediction.market.awayPrice>0?'+':''}${prediction.market.awayPrice ?? '—'} / ${prediction.home} ${prediction.market.homePrice>0?'+':''}${prediction.market.homePrice ?? '—'}`
-                  : 'Model pick shown below'}
+                  ? `Market ML: ${prediction.away} ${prediction.market.awayPrice>0?'+':''}${prediction.market.awayPrice ?? 'not yet'} / ${prediction.home} ${prediction.market.homePrice>0?'+':''}${prediction.market.homePrice ?? 'not yet'}`
+                  : 'not yet'}
               </p>
 
               <Button variant="outline" size="sm" className="w-full group-hover:border-primary/50" onClick={() => { setActive(prediction); setOpen(true); }}>
@@ -446,15 +491,15 @@ const PredictionsSection = () => {
                     <div className="text-sm space-y-2">
                       {active.market ? (
                         <div>
-                          <div>Home ML: {active.market.homePrice>0?'+':''}{active.market.homePrice ?? '—'} {active.market.homeBook ? `(${active.market.homeBook})` : ''}</div>
-                          <div>Away ML: {active.market.awayPrice>0?'+':''}{active.market.awayPrice ?? '—'} {active.market.awayBook ? `(${active.market.awayBook})` : ''}</div>
-                          <div className="mt-1">Implied: Home {active.market.homeProb ? (active.market.homeProb*100).toFixed(1)+'%' : '—'} / Away {active.market.awayProb ? (active.market.awayProb*100).toFixed(1)+'%' : '—'}</div>
+                          <div>Home ML: {active.market.homePrice>0?'+':''}{active.market.homePrice ?? 'not yet'} {active.market.homeBook ? `(${active.market.homeBook})` : ''}</div>
+                          <div>Away ML: {active.market.awayPrice>0?'+':''}{active.market.awayPrice ?? 'not yet'} {active.market.awayBook ? `(${active.market.awayBook})` : ''}</div>
+                          <div className="mt-1">Implied: Home {active.market.homeProb ? (active.market.homeProb*100).toFixed(1)+'%' : 'not yet'} / Away {active.market.awayProb ? (active.market.awayProb*100).toFixed(1)+'%' : 'not yet'}</div>
                         </div>
-                      ) : <div className="text-muted-foreground">No ML matched.</div>}
+                      ) : <div className="text-muted-foreground">not yet</div>}
                       
                       <div className="mt-2">
-                        <div><strong>Best Spread</strong>: {spread?.away ? `${active.away} ${spread.away.point>0?'+':''}${spread.away.point} (${spread.away.price>0?'+':''}${spread.away.price})` : '—'} / {spread?.home ? `${active.home} ${spread.home.point>0?'+':''}${spread.home.point} (${spread.home.price>0?'+':''}${spread.home.price})` : '—'}</div>
-                        <div><strong>Best Total</strong>: {total?.over ? `Over ${total.over.point} (${total.over.price>0?'+':''}${total.over.price})` : '—'} / {total?.under ? `Under ${total.under.point} (${total.under.price>0?'+':''}${total.under.price})` : '—'}</div>
+                        <div><strong>Best Spread</strong>: {spread?.away ? `${active.away} ${spread.away.point>0?'+':''}${spread.away.point} (${spread.away.price>0?'+':''}${spread.away.price})` : 'not yet'} / {spread?.home ? `${active.home} ${spread.home.point>0?'+':''}${spread.home.point} (${spread.home.price>0?'+':''}${spread.home.price})` : 'not yet'}</div>
+                        <div><strong>Best Total</strong>: {total?.over ? `Over ${total.over.point} (${total.over.price>0?'+':''}${total.over.price})` : 'not yet'} / {total?.under ? `Under ${total.under.point} (${total.under.price>0?'+':''}${total.under.price})` : 'not yet'}</div>
                       </div>
                       
                       <div className="mt-3">
@@ -475,15 +520,15 @@ const PredictionsSection = () => {
                             <tbody>
                               {table.length ? table.map((r: any, i: number) => (
                                 <tr key={i} className="border-t">
-                                  <td className="px-2 py-1">{r.book || '—'}</td>
-                                  <td className="px-2 py-1">{r.mlAway>0?'+':''}{r.mlAway ?? '—'}</td>
-                                  <td className="px-2 py-1">{r.mlHome>0?'+':''}{r.mlHome ?? '—'}</td>
-                                  <td className="px-2 py-1">{r.spAwayPt ? `${r.spAwayPt>0?'+':''}${r.spAwayPt}` : '—'} {r.spAway!=null ? `(${r.spAway>0?'+':''}${r.spAway})` : ''}</td>
-                                  <td className="px-2 py-1">{r.spHomePt ? `${r.spHomePt>0?'+':''}${r.spHomePt}` : '—'} {r.spHome!=null ? `(${r.spHome>0?'+':''}${r.spHome})` : ''}</td>
-                                  <td className="px-2 py-1">{r.overPt ?? '—'} {r.over!=null ? `(${r.over>0?'+':''}${r.over})` : ''}</td>
-                                  <td className="px-2 py-1">{r.underPt ?? '—'} {r.under!=null ? `(${r.under>0?'+':''}${r.under})` : ''}</td>
+                                  <td className="px-2 py-1">{r.book || 'not yet'}</td>
+                                  <td className="px-2 py-1">{r.mlAway>0?'+':''}{r.mlAway ?? 'not yet'}</td>
+                                  <td className="px-2 py-1">{r.mlHome>0?'+':''}{r.mlHome ?? 'not yet'}</td>
+                                  <td className="px-2 py-1">{r.spAwayPt ? `${r.spAwayPt>0?'+':''}${r.spAwayPt}` : 'not yet'} {r.spAway!=null ? `(${r.spAway>0?'+':''}${r.spAway})` : ''}</td>
+                                  <td className="px-2 py-1">{r.spHomePt ? `${r.spHomePt>0?'+':''}${r.spHomePt}` : 'not yet'} {r.spHome!=null ? `(${r.spHome>0?'+':''}${r.spHome})` : ''}</td>
+                                  <td className="px-2 py-1">{r.overPt ?? 'not yet'} {r.over!=null ? `(${r.over>0?'+':''}${r.over})` : ''}</td>
+                                  <td className="px-2 py-1">{r.underPt ?? 'not yet'} {r.under!=null ? `(${r.under>0?'+':''}${r.under})` : ''}</td>
                                 </tr>
-                              )) : <tr><td className="px-2 py-2 text-muted-foreground" colSpan={7}>No bookmaker data.</td></tr>}
+                              )) : <tr><td className="px-2 py-2 text-muted-foreground" colSpan={7}>not yet</td></tr>}
                             </tbody>
                           </table>
                         </div>
