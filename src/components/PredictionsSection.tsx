@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 import { fetchLiveGames, fetchUpcomingGames } from "@/services/leagues/all";
 import { predict } from "@/services/predict";
 import { DateTime } from "luxon";
+import { formatAmerican, formatPoint, isBetterPrice } from "@/utils/odds";
+import { useParlay } from "@/state/parlay";
 
 // --- Live odds helpers (proxy + fallback) ---
 function envVar(key: string): string | undefined {
@@ -246,6 +248,41 @@ function fmtPoint(x?: number) { return typeof x === "number" ? (x>0?`+${x}`:`${x
 function findMarket(b:any, key:string){ return (b.markets||[]).find((m:any)=>m.key===key); }
 function findTeam(m:any, name:string){ return (m?.outcomes||[]).find((o:any)=>nicknameTokenPS(o.name)===nicknameTokenPS(name)); }
 
+// Extract the best prices across books:
+function bestMLFor(row: any, team: "away"|"home") {
+  let best: number | undefined;
+  for (const b of (row?.books||[])) {
+    const m = (b.markets||[]).find((x:any)=>x.key==="h2h");
+    const o = m?.outcomes?.find((o:any)=>o.name && o.name.toUpperCase().includes(team==="away" ? row.away.toUpperCase().split(" ").slice(-1)[0] : row.home.toUpperCase().split(" ").slice(-1)[0]));
+    if (!o || !Number.isFinite(o.price)) continue;
+    if (best === undefined || isBetterPrice(o.price, best)) best = o.price;
+  }
+  return best;
+}
+function bestSpreadFor(row:any, team:"away"|"home") {
+  let best: { price:number, point?:number } | undefined;
+  for (const b of (row?.books||[])) {
+    const m = (b.markets||[]).find((x:any)=>x.key==="spreads");
+    const o = m?.outcomes?.find((o:any)=>o.name && o.name.toUpperCase().includes(team==="away" ? row.away.toUpperCase().split(" ").slice(-1)[0] : row.home.toUpperCase().split(" ").slice(-1)[0]));
+    if (!o || !Number.isFinite(o.price)) continue;
+    if (!best || isBetterPrice(o.price, best.price)) best = { price:o.price, point:o.point };
+  }
+  return best;
+}
+function bestTotals(row:any) {
+  let over: { price:number, point?:number } | undefined;
+  let under: { price:number, point?:number } | undefined;
+  for (const b of (row?.books||[])) {
+    const m = (b.markets||[]).find((x:any)=>x.key==="totals");
+    const o = m?.outcomes || [];
+    const O = o.find((x:any)=>/^over$/i.test(x.name));
+    const U = o.find((x:any)=>/^under$/i.test(x.name));
+    if (O && Number.isFinite(O.price) && (!over || isBetterPrice(O.price, over.price))) over = { price:O.price, point:O.point };
+    if (U && Number.isFinite(U.price) && (!under || isBetterPrice(U.price, under.price))) under = { price:U.price, point:U.point };
+  }
+  return { over, under };
+}
+
 // --- end helpers ---
 
 const PredictionsSection = () => {
@@ -255,6 +292,7 @@ const PredictionsSection = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasAnyResults, setHasAnyResults] = useState(false);
+  const { add } = useParlay();
 
   useEffect(() => {
     let alive = true;
@@ -451,6 +489,47 @@ const PredictionsSection = () => {
                    : 'not yet'}
               </p>
 
+              {prediction.market && (prediction.market.homePrice || prediction.market.awayPrice) && (
+                <div className="flex gap-2 mb-4">
+                  {prediction.market.awayPrice && (
+                    <button
+                      onClick={() => add({
+                        id: `${prediction.away}@${prediction.home}:${prediction.startUtc}:ML:away`,
+                        league: prediction.league,
+                        start: prediction.startUtc,
+                        away: prediction.away,
+                        home: prediction.home,
+                        market: "ML",
+                        side: "away",
+                        price: prediction.market.awayPrice,
+                        book: prediction.market.awayBook
+                      })}
+                      className="text-xs px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600"
+                    >
+                      Add Away ML {formatAmerican(prediction.market.awayPrice)}
+                    </button>
+                  )}
+                  {prediction.market.homePrice && (
+                    <button
+                      onClick={() => add({
+                        id: `${prediction.away}@${prediction.home}:${prediction.startUtc}:ML:home`,
+                        league: prediction.league,
+                        start: prediction.startUtc,
+                        away: prediction.away,
+                        home: prediction.home,
+                        market: "ML",
+                        side: "home",
+                        price: prediction.market.homePrice,
+                        book: prediction.market.homeBook
+                      })}
+                      className="text-xs px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600"
+                    >
+                      Add Home ML {formatAmerican(prediction.market.homePrice)}
+                    </button>
+                  )}
+                </div>
+              )}
+
               <Button variant="outline" size="sm" className="w-full group-hover:border-primary/50" onClick={() => { setActive(prediction); setOpen(true); }}>
                 <Target className="h-4 w-4 mr-2" />
                 View Full Analysis
@@ -523,33 +602,67 @@ const PredictionsSection = () => {
                                 <th className="px-2 py-1 text-left">Under</th>
                               </tr>
                             </thead>
-                            <tbody>
-                              {(active.market?.raw?.books || []).length ? (
-                                (active.market.raw.books).map((b:any, i:number) => {
-                                  const h2h = findMarket(b,"h2h");
-                                  const sp  = findMarket(b,"spreads");
-                                  const tot = findMarket(b,"totals");
-                                  const aH2H = findTeam(h2h, active.away);
-                                  const hH2H = findTeam(h2h, active.home);
-                                  const aSp  = findTeam(sp, active.away);
-                                  const hSp  = findTeam(sp, active.home);
-                                  const over = (tot?.outcomes||[]).find((o:any)=>/^over$/i.test(o.name));
-                                  const under= (tot?.outcomes||[]).find((o:any)=>/^under$/i.test(o.name));
-                                  return (
-                                    <tr key={i}>
-                                      <td className="p-2">{b.bookmaker || b.key || `Book ${i+1}`}</td>
-                                      <td className="p-2">{fmtPrice(aH2H?.price)}</td>
-                                      <td className="p-2">{fmtPrice(hH2H?.price)}</td>
-                                      <td className="p-2">{`${fmtPoint(aSp?.point)} (${fmtPrice(aSp?.price)})`}</td>
-                                      <td className="p-2">{`${fmtPoint(hSp?.point)} (${fmtPrice(hSp?.price)})`}</td>
-                                      <td className="p-2">{`${fmtPoint(over?.point)} (${fmtPrice(over?.price)})`}</td>
-                                      <td className="p-2">{`${fmtPoint(under?.point)} (${fmtPrice(under?.price)})`}</td>
-                                    </tr>
-                                  );
-                                })
-                              ) : (
-                                <tr><td className="p-2" colSpan={7}>not yet</td></tr>
-                              )}
+                             <tbody>
+                               {(active.market?.raw?.books || []).length ? (
+                                 (() => {
+                                   // compute best prices once per game row:
+                                   const BEST_AWAY = bestMLFor(active.market?.raw, "away");
+                                   const BEST_HOME = bestMLFor(active.market?.raw, "home");
+                                   const BEST_AWAY_SP = bestSpreadFor(active.market?.raw, "away");
+                                   const BEST_HOME_SP = bestSpreadFor(active.market?.raw, "home");
+                                   const BT = bestTotals(active.market?.raw);
+
+                                   return (active.market.raw.books).map((b:any, i:number) => {
+                                     const h2h = findMarket(b,"h2h");
+                                     const sp  = findMarket(b,"spreads");
+                                     const tot = findMarket(b,"totals");
+                                     const aH2H = findTeam(h2h, active.away);
+                                     const hH2H = findTeam(h2h, active.home);
+                                     const aSp  = findTeam(sp, active.away);
+                                     const hSp  = findTeam(sp, active.home);
+                                     const over = (tot?.outcomes||[]).find((o:any)=>/^over$/i.test(o.name));
+                                     const under= (tot?.outcomes||[]).find((o:any)=>/^under$/i.test(o.name));
+                                     
+                                     return (
+                                       <tr key={i}>
+                                         <td className="p-2">{b.bookmaker || b.key || `Book ${i+1}`}</td>
+                                         <td className="p-2">
+                                           {aH2H ? <span className={aH2H.price === BEST_AWAY ? "text-emerald-400 font-semibold" : ""}>
+                                             {aH2H.price === BEST_AWAY ? "⭐ " : ""}{formatAmerican(aH2H.price)}
+                                           </span> : "—"}
+                                         </td>
+                                         <td className="p-2">
+                                           {hH2H ? <span className={hH2H.price === BEST_HOME ? "text-emerald-400 font-semibold" : ""}>
+                                             {hH2H.price === BEST_HOME ? "⭐ " : ""}{formatAmerican(hH2H.price)}
+                                           </span> : "—"}
+                                         </td>
+                                         <td className="p-2">
+                                           {aSp ? <span className={aSp.price === BEST_AWAY_SP?.price && aSp.point === BEST_AWAY_SP?.point ? "text-emerald-400 font-semibold" : ""}>
+                                             {aSp.price === BEST_AWAY_SP?.price && aSp.point === BEST_AWAY_SP?.point ? "⭐ " : ""}{formatPoint(aSp.point)} ({formatAmerican(aSp.price)})
+                                           </span> : "—"}
+                                         </td>
+                                         <td className="p-2">
+                                           {hSp ? <span className={hSp.price === BEST_HOME_SP?.price && hSp.point === BEST_HOME_SP?.point ? "text-emerald-400 font-semibold" : ""}>
+                                             {hSp.price === BEST_HOME_SP?.price && hSp.point === BEST_HOME_SP?.point ? "⭐ " : ""}{formatPoint(hSp.point)} ({formatAmerican(hSp.price)})
+                                           </span> : "—"}
+                                         </td>
+                                         <td className="p-2">
+                                           {over ? <span className={over.price === BT.over?.price && over.point === BT.over?.point ? "text-emerald-400 font-semibold" : ""}>
+                                             {over.price === BT.over?.price && over.point === BT.over?.point ? "⭐ " : ""}{`O ${formatPoint(over.point)} (${formatAmerican(over.price)})`}
+                                           </span> : "—"}
+                                         </td>
+                                         <td className="p-2">
+                                           {under ? <span className={under.price === BT.under?.price && under.point === BT.under?.point ? "text-emerald-400 font-semibold" : ""}>
+                                             {under.price === BT.under?.price && under.point === BT.under?.point ? "⭐ " : ""}{`U ${formatPoint(under.point)} (${formatAmerican(under.price)})`}
+                                           </span> : "—"}
+                                         </td>
+                                       </tr>
+                                     );
+                                   });
+                                 })()
+                               ) : (
+                                 <tr><td className="p-2" colSpan={7}>not yet</td></tr>
+                               )}
                             </tbody>
                           </table>
                         </div>
