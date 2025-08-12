@@ -315,20 +315,23 @@ const PredictionsSection = () => {
         const primaryMatched = matchOddsPS(oddsByLeague[g.league] || [], g.away, g.home);
         const espnMatched = matchESPNOddsPS(espnOddsByLeague[g.league] || [], g.away, g.home);
         
+        const sportLabel = g.league.toUpperCase() as any;
+        
         const consensus = consensusRow(
+          sportLabel,
           primaryMatched ? { start: primaryMatched.start, home: primaryMatched.home, away: primaryMatched.away, books: primaryMatched.books as any } : null,
           espnMatched
         );
         
         const market = consensus ? {
-          homePrice: consensus.h2hHome?.price,
-          awayPrice: consensus.h2hAway?.price,
-          homeProb: consensus.h2hHome ? (consensus.h2hHome.price>0? 100/(consensus.h2hHome.price+100) : (-consensus.h2hHome.price)/((-consensus.h2hHome.price)+100)) : null,
-          awayProb: consensus.h2hAway ? (consensus.h2hAway.price>0? 100/(consensus.h2hAway.price+100) : (-consensus.h2hAway.price)/((-consensus.h2hAway.price)+100)) : null,
+          homePrice: consensus.hHome?.price,
+          awayPrice: consensus.hAway?.price,
+          homeProb: consensus.hHome ? (consensus.hHome.price>0? 100/(consensus.hHome.price+100) : (-consensus.hHome.price)/((-consensus.hHome.price)+100)) : null,
+          awayProb: consensus.hAway ? (consensus.hAway.price>0? 100/(consensus.hAway.price+100) : (-consensus.hAway.price)/((-consensus.hAway.price)+100)) : null,
           spreadHome: consensus.spHome,
           spreadAway: consensus.spAway,
-          totalOver: consensus.totOver,
-          totalUnder: consensus.totUnder,
+          totalOver: consensus.tOver,
+          totalUnder: consensus.tUnder,
         } : null;
         
         return { ...g, market, marketMatched: primaryMatched };

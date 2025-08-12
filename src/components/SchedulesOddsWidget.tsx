@@ -314,23 +314,27 @@ async function fetchOddsForLeague(league: string, oddsProvider: string, oddsKey:
 
 // Updated formatter functions that use consensus
 function formatConsensusML(primaryOdds: OddsData | null, espnOdds: NormalizedOddsRow | null, away: string, home: string): string {
+  const lgMap: Record<string,string> = { mlb:"MLB", nba:"NBA", nhl:"NHL", nfl:"NFL", mls:"MLS", soccer:"EPL" };
+  const sportLabel = 'MLB' as any; // Default to MLB for now
+  
   const consensus = consensusRow(
+    sportLabel,
     primaryOdds ? { start: primaryOdds.start, home: primaryOdds.home, away: primaryOdds.away, books: primaryOdds.books as any } : null,
     espnOdds
   );
 
-  if (consensus?.h2hAway && consensus?.h2hHome) {
-    const awayProb = impliedProbability(consensus.h2hAway.price);
-    const homeProb = impliedProbability(consensus.h2hHome.price);
+  if (consensus?.hAway && consensus?.hHome) {
+    const awayProb = impliedProbability(consensus.hAway.price);
+    const homeProb = impliedProbability(consensus.hHome.price);
     const favPct = Math.max(awayProb || 0, homeProb || 0);
 
     return `
       <div class="relative p-2 border border-border rounded-lg" role="group" aria-label="Consensus moneyline">
         <div class="absolute inset-0 pointer-events-none rounded-lg bg-gradient-to-r from-yellow-400/20 to-transparent" style="width: ${(favPct * 100).toFixed(0)}%"></div>
-        <div class="relative font-semibold">${consensus.h2hAway.price > 0 ? '+' : ''}${consensus.h2hAway.price} / ${consensus.h2hHome.price > 0 ? '+' : ''}${consensus.h2hHome.price}</div>
+        <div class="relative font-semibold">${consensus.hAway.price > 0 ? '+' : ''}${consensus.hAway.price} / ${consensus.hHome.price > 0 ? '+' : ''}${consensus.hHome.price}</div>
         <div class="relative text-xs opacity-90 flex gap-2 flex-wrap mt-1">
           <span>${formatPercent(awayProb)} / ${formatPercent(homeProb)}</span>
-          <span class="px-2 py-0.5 border border-border rounded-full">${consensus.h2hAway.source}</span>
+          <span class="px-2 py-0.5 border border-border rounded-full">${consensus.hAway.source}</span>
         </div>
       </div>`;
   }
@@ -338,7 +342,11 @@ function formatConsensusML(primaryOdds: OddsData | null, espnOdds: NormalizedOdd
 }
 
 function formatConsensusSpread(primaryOdds: OddsData | null, espnOdds: NormalizedOddsRow | null): string {
+  const lgMap: Record<string,string> = { mlb:"MLB", nba:"NBA", nhl:"NHL", nfl:"NFL", mls:"MLS", soccer:"EPL" };
+  const sportLabel = 'MLB' as any; // Default to MLB for now
+  
   const consensus = consensusRow(
+    sportLabel,
     primaryOdds ? { start: primaryOdds.start, home: primaryOdds.home, away: primaryOdds.away, books: primaryOdds.books as any } : null,
     espnOdds
   );
@@ -356,17 +364,21 @@ function formatConsensusSpread(primaryOdds: OddsData | null, espnOdds: Normalize
 }
 
 function formatConsensusTotal(primaryOdds: OddsData | null, espnOdds: NormalizedOddsRow | null): string {
+  const lgMap: Record<string,string> = { mlb:"MLB", nba:"NBA", nhl:"NHL", nfl:"NFL", mls:"MLS", soccer:"EPL" };
+  const sportLabel = 'MLB' as any; // Default to MLB for now
+  
   const consensus = consensusRow(
+    sportLabel,
     primaryOdds ? { start: primaryOdds.start, home: primaryOdds.home, away: primaryOdds.away, books: primaryOdds.books as any } : null,
     espnOdds
   );
 
-  if (consensus?.totOver && consensus?.totUnder) {
+  if (consensus?.tOver && consensus?.tUnder) {
     return `
       <div class="relative p-2 border border-border rounded-lg" role="group" aria-label="Consensus totals">
-        <div class="relative font-semibold">O ${consensus.totOver.point} (${consensus.totOver.price > 0 ? '+' : ''}${consensus.totOver.price}) / U ${consensus.totUnder.point} (${consensus.totUnder.price > 0 ? '+' : ''}${consensus.totUnder.price})</div>
+        <div class="relative font-semibold">O ${consensus.tOver.point} (${consensus.tOver.price > 0 ? '+' : ''}${consensus.tOver.price}) / U ${consensus.tUnder.point} (${consensus.tUnder.price > 0 ? '+' : ''}${consensus.tUnder.price})</div>
         <div class="relative text-xs opacity-90 flex gap-2 flex-wrap mt-1">
-          <span class="px-2 py-0.5 border border-border rounded-full">${consensus.totOver.source}</span>
+          <span class="px-2 py-0.5 border border-border rounded-full">${consensus.tOver.source}</span>
         </div>
       </div>`;
   }
