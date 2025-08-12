@@ -40,9 +40,15 @@ interface OutcomeData {
 
 type Tab = 'live' | 'upcoming';
 
-// Read site variables from window.env (Lovable Site Variables)
+// Get environment variables (prefer VITE_ env vars over site variables)
 function getEnv(key: string): string | undefined {
   try {
+    // First try VITE_ environment variables
+    if (key === 'ODDS_API_KEY') {
+      const viteKey = import.meta.env.VITE_ODDS_API_KEY;
+      if (viteKey) return viteKey;
+    }
+    // Fallback to site variables
     return (window as any)?.env?.[key];
   } catch {
     return undefined;
@@ -381,6 +387,8 @@ export default function SchedulesOddsWidget() {
   const oddsRegion = useMemo(() => getEnv('ODDS_REGION') || 'us', []);
   const oddsBookmakers = useMemo(() => getEnv('ODDS_BOOKMAKERS') || 'draftkings,betmgm,fanduel,caesars', []);
   const soccerKeys = useMemo(() => (getEnv('ODDS_SOCCER_KEYS') || 'soccer_usa_mls').split(',').map(s => s.trim()).filter(Boolean), []);
+  
+  const showOddsWarning = !oddsKey;
 
   useEffect(() => {
     reloadData();
@@ -470,6 +478,16 @@ export default function SchedulesOddsWidget() {
         </header>
 
         <article className="rounded-xl border border-border bg-card p-4 shadow-sm">
+          {/* API Key Warning Banner */}
+          {showOddsWarning && (
+            <div className="mb-4 p-3 bg-warning/10 border border-warning/20 rounded-lg text-warning">
+              <p className="text-sm">
+                📊 Odds API key not configured. Schedules will load but odds will be disabled. 
+                Set <code className="font-mono text-xs bg-background px-1 rounded">VITE_ODDS_API_KEY</code> in Project Settings → Environment Variables.
+              </p>
+            </div>
+          )}
+          
           {/* Controls */}
           <div className="flex flex-wrap items-end gap-3 mb-4">
             <label className="text-sm text-muted-foreground flex flex-col">
