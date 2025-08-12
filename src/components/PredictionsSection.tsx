@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { fetchLiveGames, fetchUpcomingGames } from "@/services/leagues/all";
 import { predict } from "@/services/predict";
 import { DateTime } from "luxon";
-import { fetchESPNOdds } from '@/services/providers';
+import { fetchESPNOdds, consensusRow, canonicalMLB, type NormalizedOddsRow } from '@/services/providers';
 
 // === Odds helpers for PredictionsSection ===
 type OddsRow = {
@@ -247,14 +247,8 @@ function buildBookTable(row: OddsRow | null) {
 }
 
 function matchOddsPS(list: OddsRow[], away: string, home: string): OddsRow | null {
-  const a = normNamePS(away), h = normNamePS(home);
-  const aNick = nicknameTokenPS(away), hNick = nicknameTokenPS(home);
   for (const row of list) {
-    const rowA = normNamePS(row.away), rowH = normNamePS(row.home);
-    const rowANick = nicknameTokenPS(row.away), rowHNick = nicknameTokenPS(row.home);
-    if ((rowA.includes(a) && rowH.includes(h)) ||
-        (a.includes(rowA) && h.includes(rowH)) ||
-        (rowANick === aNick && rowHNick === hNick)) {
+    if (canonicalMLB(row.away) === canonicalMLB(away) && canonicalMLB(row.home) === canonicalMLB(home)) {
       return row;
     }
   }
@@ -299,23 +293,45 @@ const PredictionsSection = () => {
         console.log(`Odds rows ${lg}: ${odds.length}`);
         oddsByLeague[lg] = odds;
       }
-      const withOdds = [...accumulatedGames].map(g => {
-        const matched = matchOddsPS(oddsByLeague[g.league] || [], g.away, g.home);
-        let best: any = null;
-        if (matched) {
-          const byTeam = bestH2H(matched);
-          const homeBest = byTeam ? byTeam[normNamePS(g.home)] : undefined;
-          const awayBest = byTeam ? byTeam[normNamePS(g.away)] : undefined;
-          best = {
-            homePrice: homeBest?.price,
-            homeProb: homeBest ? impliedProb(homeBest.price) : null,
-            homeBook: homeBest?.book,
-            awayPrice: awayBest?.price,
-            awayProb: awayBest ? impliedProb(awayBest.price) : null,
-            awayBook: awayBest?.book,
-          };
+      // fetch ESPN odds for consensus
+      const espnOddsByLeague: Record<string, NormalizedOddsRow[]> = {};
+      for (const lg of leagues) {
+        const lgMap: Record<string,string> = { MLB:'MLB', NBA:'NBA', NHL:'NHL', NFL:'NFL', MLS:'MLS' };
+        const dateStr = DateTime.now().toFormat('yyyy-MM-dd');
+        const espnOdds = await fetchESPNOdds(lgMap[lg] || lg.toUpperCase(), dateStr);
+        espnOddsByLeague[lg] = espnOdds;
+      }
+
+      function matchESPNOddsPS(list: NormalizedOddsRow[], away: string, home: string): NormalizedOddsRow | null {
+        for (const row of list) {
+          if (canonicalMLB(row.away) === canonicalMLB(away) && canonicalMLB(row.home) === canonicalMLB(home)) {
+            return row;
+          }
         }
-        return { ...g, market: best, marketMatched: matched };
+        return null;
+      }
+
+      const withOdds = [...accumulatedGames].map(g => {
+        const primaryMatched = matchOddsPS(oddsByLeague[g.league] || [], g.away, g.home);
+        const espnMatched = matchESPNOddsPS(espnOddsByLeague[g.league] || [], g.away, g.home);
+        
+        const consensus = consensusRow(
+          primaryMatched ? { start: primaryMatched.start, home: primaryMatched.home, away: primaryMatched.away, books: primaryMatched.books as any } : null,
+          espnMatched
+        );
+        
+        const market = consensus ? {
+          homePrice: consensus.h2hHome?.price,
+          awayPrice: consensus.h2hAway?.price,
+          homeProb: consensus.h2hHome ? (consensus.h2hHome.price>0? 100/(consensus.h2hHome.price+100) : (-consensus.h2hHome.price)/((-consensus.h2hHome.price)+100)) : null,
+          awayProb: consensus.h2hAway ? (consensus.h2hAway.price>0? 100/(consensus.h2hAway.price+100) : (-consensus.h2hAway.price)/((-consensus.h2hAway.price)+100)) : null,
+          spreadHome: consensus.spHome,
+          spreadAway: consensus.spAway,
+          totalOver: consensus.totOver,
+          totalUnder: consensus.totUnder,
+        } : null;
+        
+        return { ...g, market, marketMatched: primaryMatched };
       });
       
       const sortedWithOdds = withOdds
@@ -458,7 +474,7 @@ const PredictionsSection = () => {
 
               <p className="text-sm text-muted-foreground mb-4">
                 {prediction.market && (prediction.market.homePrice || prediction.market.awayPrice)
-                  ? `Market ML: ${prediction.away} ${prediction.market.awayPrice>0?'+':''}${prediction.market.awayPrice ?? 'not yet'} / ${prediction.home} ${prediction.market.homePrice>0?'+':''}${prediction.market.homePrice ?? 'not yet'}`
+                  ? `Consensus ML: ${prediction.away} ${prediction.market.awayPrice>0?'+':''}${prediction.market.awayPrice ?? 'not yet'} / ${prediction.home} ${prediction.market.homePrice>0?'+':''}${prediction.market.homePrice ?? 'not yet'}`
                    : 'not yet'}
               </p>
 

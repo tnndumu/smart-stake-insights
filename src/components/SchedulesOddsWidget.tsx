@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { fetchESPNOdds } from '@/services/providers';
+import { fetchESPNOdds, consensusRow, canonicalMLB, type NormalizedOddsRow } from '@/services/providers';
 
 // Helper types
 interface Row {
@@ -139,22 +139,18 @@ function nicknameToken(name: string): string {
 }
 
 function matchOdds(oddsList: OddsData[], away: string, home: string): OddsData | null {
-  const awayNorm = normalizeName(away);
-  const homeNorm = normalizeName(home);
-  const awayNick = nicknameToken(away);
-  const homeNick = nicknameToken(home);
-  
   for (const odds of oddsList) {
-    const oddsAwayNorm = normalizeName(odds.away);
-    const oddsHomeNorm = normalizeName(odds.home);
-    const oddsAwayNick = nicknameToken(odds.away);
-    const oddsHomeNick = nicknameToken(odds.home);
-    
-    // Exact match, contains match, or nickname match
-    if ((oddsAwayNorm === awayNorm && oddsHomeNorm === homeNorm) || 
-        (oddsAwayNorm.includes(awayNorm) && oddsHomeNorm.includes(homeNorm)) ||
-        (awayNorm.includes(oddsAwayNorm) && homeNorm.includes(oddsHomeNorm)) ||
-        (oddsAwayNick === awayNick && oddsHomeNick === homeNick)) {
+    // Use canonical name matching from consensus module
+    if (canonicalMLB(odds.away) === canonicalMLB(away) && canonicalMLB(odds.home) === canonicalMLB(home)) {
+      return odds;
+    }
+  }
+  return null;
+}
+
+function matchESPNOdds(oddsList: NormalizedOddsRow[], away: string, home: string): NormalizedOddsRow | null {
+  for (const odds of oddsList) {
+    if (canonicalMLB(odds.away) === canonicalMLB(away) && canonicalMLB(odds.home) === canonicalMLB(home)) {
       return odds;
     }
   }
@@ -316,6 +312,67 @@ async function fetchOddsForLeague(league: string, oddsProvider: string, oddsKey:
   return espn.map(row => ({ sportKey: keys[0] || '', start: row.start, home: row.home, away: row.away, books: row.books }));
 }
 
+// Updated formatter functions that use consensus
+function formatConsensusML(primaryOdds: OddsData | null, espnOdds: NormalizedOddsRow | null, away: string, home: string): string {
+  const consensus = consensusRow(
+    primaryOdds ? { start: primaryOdds.start, home: primaryOdds.home, away: primaryOdds.away, books: primaryOdds.books as any } : null,
+    espnOdds
+  );
+
+  if (consensus?.h2hAway && consensus?.h2hHome) {
+    const awayProb = impliedProbability(consensus.h2hAway.price);
+    const homeProb = impliedProbability(consensus.h2hHome.price);
+    const favPct = Math.max(awayProb || 0, homeProb || 0);
+
+    return `
+      <div class="relative p-2 border border-border rounded-lg" role="group" aria-label="Consensus moneyline">
+        <div class="absolute inset-0 pointer-events-none rounded-lg bg-gradient-to-r from-yellow-400/20 to-transparent" style="width: ${(favPct * 100).toFixed(0)}%"></div>
+        <div class="relative font-semibold">${consensus.h2hAway.price > 0 ? '+' : ''}${consensus.h2hAway.price} / ${consensus.h2hHome.price > 0 ? '+' : ''}${consensus.h2hHome.price}</div>
+        <div class="relative text-xs opacity-90 flex gap-2 flex-wrap mt-1">
+          <span>${formatPercent(awayProb)} / ${formatPercent(homeProb)}</span>
+          <span class="px-2 py-0.5 border border-border rounded-full">${consensus.h2hAway.source}</span>
+        </div>
+      </div>`;
+  }
+  return 'not yet';
+}
+
+function formatConsensusSpread(primaryOdds: OddsData | null, espnOdds: NormalizedOddsRow | null): string {
+  const consensus = consensusRow(
+    primaryOdds ? { start: primaryOdds.start, home: primaryOdds.home, away: primaryOdds.away, books: primaryOdds.books as any } : null,
+    espnOdds
+  );
+
+  if (consensus?.spAway && consensus?.spHome) {
+    return `
+      <div class="relative p-2 border border-border rounded-lg" role="group" aria-label="Consensus spread">
+        <div class="relative font-semibold">${consensus.spAway.point! > 0 ? '+' : ''}${consensus.spAway.point} (${consensus.spAway.price > 0 ? '+' : ''}${consensus.spAway.price}) / ${consensus.spHome.point! > 0 ? '+' : ''}${consensus.spHome.point} (${consensus.spHome.price > 0 ? '+' : ''}${consensus.spHome.price})</div>
+        <div class="relative text-xs opacity-90 mt-1">
+          <span class="px-2 py-0.5 border border-border rounded-full">${consensus.spAway.source}</span>
+        </div>
+      </div>`;
+  }
+  return 'not yet';
+}
+
+function formatConsensusTotal(primaryOdds: OddsData | null, espnOdds: NormalizedOddsRow | null): string {
+  const consensus = consensusRow(
+    primaryOdds ? { start: primaryOdds.start, home: primaryOdds.home, away: primaryOdds.away, books: primaryOdds.books as any } : null,
+    espnOdds
+  );
+
+  if (consensus?.totOver && consensus?.totUnder) {
+    return `
+      <div class="relative p-2 border border-border rounded-lg" role="group" aria-label="Consensus totals">
+        <div class="relative font-semibold">O ${consensus.totOver.point} (${consensus.totOver.price > 0 ? '+' : ''}${consensus.totOver.price}) / U ${consensus.totUnder.point} (${consensus.totUnder.price > 0 ? '+' : ''}${consensus.totUnder.price})</div>
+        <div class="relative text-xs opacity-90 flex gap-2 flex-wrap mt-1">
+          <span class="px-2 py-0.5 border border-border rounded-full">${consensus.totOver.source}</span>
+        </div>
+      </div>`;
+  }
+  return 'not yet';
+}
+
 function formatBestMoneyline(odds: OddsData | null): string {
   if (!odds) return 'not yet';
   
@@ -450,6 +507,7 @@ export default function SchedulesOddsWidget() {
   const [loading, setLoading] = useState<boolean>(false);
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
   const [drawerData, setDrawerData] = useState<Row | null>(null);
+  const [espnOdds, setEspnOdds] = useState<NormalizedOddsRow[]>([]);
   const timerRef = useRef<number | null>(null);
 
   const backend = useMemo(() => getEnv('BACKEND_URL') || '', []);
@@ -495,6 +553,18 @@ export default function SchedulesOddsWidget() {
       selected.forEach((league, index) => {
         oddsByLeague[league] = oddsResults[index];
       });
+
+      // Fetch ESPN odds for consensus
+      const lgMap: Record<string,string> = { mlb:'MLB', nba:'NBA', nhl:'NHL', nfl:'NFL', mls:'MLS', soccer:'EPL' };
+      const espnOddsPromises = selected.map(league => 
+        fetchESPNOdds(lgMap[league] || league.toUpperCase(), date)
+      );
+      const espnResults = await Promise.all(espnOddsPromises);
+      const espnByLeague: Record<string, NormalizedOddsRow[]> = {};
+      selected.forEach((league, index) => {
+        espnByLeague[league] = espnResults[index];
+      });
+      setEspnOdds(espnResults.flat());
 
       // Merge schedules with odds
       const mergedRows = schedules.map(schedule => {
@@ -693,9 +763,26 @@ export default function SchedulesOddsWidget() {
                       <td className="py-2">{row.away || ''}</td>
                       <td className="py-2">{row.home || ''}</td>
                       <td className="py-2 capitalize">{row.status || ''}</td>
-                      <td className="py-2" dangerouslySetInnerHTML={{ __html: formatBestMoneyline(row.odds) }} />
-                      <td className="py-2">{formatBestSpread(row.odds)}</td>
-                      <td className="py-2">{formatBestTotal(row.odds)}</td>
+                       <td className="py-2" dangerouslySetInnerHTML={{ 
+                         __html: formatConsensusML(
+                           row.odds, 
+                           matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || ''), 
+                           row.away || '', 
+                           row.home || ''
+                         ) 
+                       }} />
+                       <td className="py-2" dangerouslySetInnerHTML={{ 
+                         __html: formatConsensusSpread(
+                           row.odds, 
+                           matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '')
+                         )
+                       }} />
+                       <td className="py-2" dangerouslySetInnerHTML={{ 
+                         __html: formatConsensusTotal(
+                           row.odds, 
+                           matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '')
+                         )
+                       }} />
                       <td className="py-2">{row.venue || ''}</td>
                     </tr>
                   ))
