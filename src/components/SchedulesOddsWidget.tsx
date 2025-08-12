@@ -42,17 +42,18 @@ type Tab = 'live' | 'upcoming';
 
 // Get environment variables (prefer proxy over direct API)
 function getEnv(key: string): string | undefined {
-  try {
-    // First try VITE_ environment variables
-    if (key === 'ODDS_API_KEY') {
-      const viteKey = import.meta.env.VITE_ODDS_API_KEY;
-      if (viteKey) return viteKey;
-    }
-    // Fallback to site variables
-    return (window as any)?.env?.[key];
-  } catch {
-    return undefined;
-  }
+  // Prefer Lovable Site Variables (window.env) but also read Vite env at build time
+  const map: Record<string, string> = {
+    ODDS_API_KEY: 'VITE_ODDS_API_KEY',
+    SUPABASE_URL: 'VITE_SUPABASE_URL',
+    ODDS_REGION: 'VITE_ODDS_REGION',
+    ODDS_BOOKMAKERS: 'VITE_ODDS_BOOKMAKERS',
+  };
+  const viteKey = map[key] || key;
+  const fromWindow = (window as any)?.env?.[key];
+  let fromVite: string | undefined;
+  try { fromVite = (import.meta as any)?.env?.[viteKey]; } catch { /* noop */ }
+  return fromWindow ?? fromVite;
 }
 
 function todayYYYYMMDD() {
@@ -211,51 +212,36 @@ async function fetchScheduleForLeague(league: string, date: string, backend: str
 }
 
 async function fetchOddsForLeague(league: string, oddsProvider: string, oddsKey: string, oddsRegion: string, oddsBookmakers: string, soccerKeys: string[]): Promise<OddsData[]> {
-  // Use Supabase proxy instead of direct API calls
-  const SUPABASE_URL = "https://hgcbxwttbwwschlgiigj.supabase.co";
-  const FUNC_BASE = `${SUPABASE_URL}/functions/v1/odds-proxy`;
-  
   const keys = league === 'soccer' ? soccerKeys : [SPORT_KEYS[league]].filter(Boolean);
   if (!keys.length) return [];
   
   const results = await Promise.all(keys.map(async (sportKey) => {
     try {
-      // Try proxy first
-      const proxyUrl = new URL(FUNC_BASE);
-      proxyUrl.searchParams.set('sport', sportKey);
-      proxyUrl.searchParams.set('markets', 'h2h,spreads,totals');
-      proxyUrl.searchParams.set('regions', oddsRegion);
+      let url = new URL(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds`);
+      url.searchParams.set('regions', oddsRegion);
+      url.searchParams.set('markets', 'h2h,spreads,totals');
+      url.searchParams.set('oddsFormat', 'american');
+      url.searchParams.set('dateFormat', 'iso');
+      url.searchParams.set('bookmakers', oddsBookmakers);
+
+      const supabaseUrl = getEnv('SUPABASE_URL') || '';
+      if (supabaseUrl) {
+        const p = new URL(supabaseUrl.replace(/\/$/, '') + '/functions/v1/odds-proxy');
+        p.searchParams.set('sport', sportKey);
+        p.searchParams.set('regions', oddsRegion);
+        p.searchParams.set('markets', 'h2h,spreads,totals');
+        p.searchParams.set('bookmakers', oddsBookmakers);
+        url = p;
+      } else {
+        url.searchParams.set('apiKey', oddsKey);
+      }
       
-      console.log(`Fetching odds via proxy for ${sportKey}`);
-      const response = await fetch(proxyUrl.toString());
+      console.log(`Fetching odds for ${sportKey}`);
+      const response = await fetch(url.toString());
       
       if (response.ok) {
         const data = await response.json();
-        console.log(`Received ${data.length} odds entries via proxy for ${sportKey}`);
-        return (data || []).map((item: any) => ({
-          sportKey,
-          start: item.commence_time,
-          home: item.home_team,
-          away: item.away_team,
-          books: item.bookmakers || [],
-        }));
-      }
-      
-      // Fallback to direct API if proxy fails and we have a key
-      if (oddsKey) {
-        console.log(`Proxy failed for ${sportKey}, trying direct API`);
-        const directUrl = new URL(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds`);
-        directUrl.searchParams.set('regions', oddsRegion);
-        directUrl.searchParams.set('markets', 'h2h,spreads,totals');
-        directUrl.searchParams.set('oddsFormat', 'american');
-        directUrl.searchParams.set('dateFormat', 'iso');
-        directUrl.searchParams.set('bookmakers', oddsBookmakers);
-        directUrl.searchParams.set('apiKey', oddsKey);
-        
-        const directResponse = await fetch(directUrl);
-        if (!directResponse.ok) return [];
-        
-        const data = await directResponse.json();
+        console.log(`Received ${data.length} odds entries for ${sportKey}`);
         return (data || []).map((item: any) => ({
           sportKey,
           start: item.commence_time,
@@ -512,12 +498,11 @@ export default function SchedulesOddsWidget() {
 
         <article className="rounded-xl border border-border bg-card p-4 shadow-sm">
           {/* API Configuration Warning Banner */}
-          {showOddsWarning && (
-            <div className="mb-4 p-3 bg-warning/10 border border-warning/20 rounded-lg text-warning">
-              <p className="text-sm">
-                📊 Odds disabled: No proxy or direct API key available. 
-                Configure <code className="font-mono text-xs bg-background px-1 rounded">ODDS_API_KEY</code> in Supabase Edge Function secrets for secure proxy access.
-              </p>
+          {oddsProvider === 'theoddsapi' && !oddsKey && !getEnv('SUPABASE_URL') && (
+            <div className="mb-4 rounded-md border border-yellow-600/30 bg-yellow-900/20 px-3 py-2 text-sm">
+              <strong>Odds API key not configured.</strong> Schedules will load but odds will be disabled.
+              Set <code>ODDS_API_KEY</code> (or <code>VITE_ODDS_API_KEY</code>) in <em>Project → Settings → Environment variables</em>,
+              or set <code>SUPABASE_URL</code> and deploy the <code>odds-proxy</code> function to keep the key server-side.
             </div>
           )}
           
