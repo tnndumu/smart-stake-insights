@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Trophy, TrendingUp, Target, User, LogOut } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { BRAND } from "@/config/brand";
 
 const Header = () => {
   const { user, signOut } = useAuth();
@@ -17,9 +18,9 @@ const Header = () => {
             </div>
             <div>
               <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-warning bg-clip-text text-transparent">
-                WinPicks Pro
+                {BRAND.NAME}
               </h1>
-              <p className="text-xs text-muted-foreground">Professional Betting Analysis</p>
+              <p className="text-xs text-muted-foreground">{BRAND.TAGLINE}</p>
             </div>
           </div>
           

@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Trophy, Mail, Lock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { BRAND } from '@/config/brand';
 
 const Auth = () => {
   const [email, setEmail] = useState('');
@@ -43,7 +44,7 @@ const Auth = () => {
             <Trophy className="h-8 w-8 text-primary-foreground" />
           </div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-warning bg-clip-text text-transparent">
-            WinPicks Pro
+            {BRAND.NAME}
           </h1>
           <p className="text-muted-foreground mt-2">Access professional betting insights</p>
         </div>

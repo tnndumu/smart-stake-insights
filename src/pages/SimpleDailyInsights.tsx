@@ -1,6 +1,7 @@
 import React from 'react';
 import { Trophy } from 'lucide-react';
 import InsightsOddsCards from '@/components/InsightsOddsCards';
+import { BRAND } from '@/config/brand';
 
 const SimpleDailyInsights = () => {
 
@@ -17,7 +18,7 @@ const SimpleDailyInsights = () => {
               <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-warning bg-clip-text text-transparent">
                 Daily Betting Insights
               </h1>
-              <p className="text-sm text-muted-foreground">Professional analysis and predictions</p>
+              <p className="text-sm text-muted-foreground">{BRAND.TAGLINE}</p>
             </div>
           </div>
         </div>
