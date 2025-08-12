@@ -498,13 +498,13 @@ export default function SchedulesOddsWidget() {
 
         <article className="rounded-xl border border-border bg-card p-4 shadow-sm">
           {/* API Configuration Warning Banner */}
-          {oddsProvider === 'theoddsapi' && !oddsKey && !getEnv('SUPABASE_URL') && (
-            <div className="mb-4 rounded-md border border-yellow-600/30 bg-yellow-900/20 px-3 py-2 text-sm">
-              <strong>Odds API key not configured.</strong> Schedules will load but odds will be disabled.
-              Set <code>ODDS_API_KEY</code> (or <code>VITE_ODDS_API_KEY</code>) in <em>Project → Settings → Environment variables</em>,
-              or set <code>SUPABASE_URL</code> and deploy the <code>odds-proxy</code> function to keep the key server-side.
-            </div>
-          )}
+        {oddsProvider === 'theoddsapi' && !oddsKey && !getEnv('SUPABASE_URL') && (
+          <div className="mb-4 rounded-md border border-yellow-600/30 bg-yellow-900/20 px-3 py-2 text-sm">
+            <strong>Odds API key not configured.</strong> Schedules will load but odds will be disabled.
+            Set <code>ODDS_API_KEY</code> (or <code>VITE_ODDS_API_KEY</code>) in <em>Project → Settings → Environment variables</em>,
+            or set <code>SUPABASE_URL</code> and deploy the <code>odds-proxy</code> function to keep the key server-side.
+          </div>
+        )}
           
           {/* Development Debug Info */}
           {import.meta.env.DEV && (
