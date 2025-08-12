@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { fetchESPNOdds, consensusRow, canonicalMLB, type NormalizedOddsRow } from '@/services/providers';
+import { fetchESPNOdds, consensusRow, canonicalMLB, canonicalSoccer, type NormalizedOddsRow } from '@/services/providers';
+import { DateTime } from 'luxon';
 
 // Helper types
 interface Row {
@@ -49,12 +50,25 @@ function getEnv(key: string): string | undefined {
     SUPABASE_URL: 'VITE_SUPABASE_URL',
     ODDS_REGION: 'VITE_ODDS_REGION',
     ODDS_BOOKMAKERS: 'VITE_ODDS_BOOKMAKERS',
+    FORCE_ESPN: 'VITE_FORCE_ESPN',
+    FORCE_ESPN_UNTIL: 'VITE_FORCE_ESPN_UNTIL',
   };
   const viteKey = map[key] || key;
   const fromWindow = (window as any)?.env?.[key];
   let fromVite: string | undefined;
   try { fromVite = (import.meta as any)?.env?.[viteKey]; } catch { /* noop */ }
   return fromWindow ?? fromVite;
+}
+
+/* ESPN-only if FORCE_ESPN === '1' OR selected date <= FORCE_ESPN_UNTIL (YYYY-MM-DD) */
+function shouldForceESPN(selectedISO: string): boolean {
+  if (getEnv('FORCE_ESPN') === '1') return true;
+  const until = getEnv('FORCE_ESPN_UNTIL');
+  if (!until) return false;
+  try {
+    const sel = DateTime.fromISO(selectedISO).toISODate();
+    return sel! <= until;
+  } catch { return false; }
 }
 
 function todayYYYYMMDD() {
@@ -138,19 +152,22 @@ function nicknameToken(name: string): string {
   return words[words.length - 1] || n;
 }
 
-function matchOdds(oddsList: OddsData[], away: string, home: string): OddsData | null {
+function matchOdds(oddsList: OddsData[], away: string, home: string, league: string): OddsData | null {
+  // Choose canonicalizer based on league
+  const canon = (league === 'soccer' || league === 'mls') ? canonicalSoccer : canonicalMLB;
   for (const odds of oddsList) {
-    // Use canonical name matching from consensus module
-    if (canonicalMLB(odds.away) === canonicalMLB(away) && canonicalMLB(odds.home) === canonicalMLB(home)) {
+    if (canon(odds.away) === canon(away) && canon(odds.home) === canon(home)) {
       return odds;
     }
   }
   return null;
 }
 
-function matchESPNOdds(oddsList: NormalizedOddsRow[], away: string, home: string): NormalizedOddsRow | null {
+function matchESPNOdds(oddsList: NormalizedOddsRow[], away: string, home: string, league: string): NormalizedOddsRow | null {
+  // Choose canonicalizer based on league  
+  const canon = (league === 'soccer' || league === 'mls') ? canonicalSoccer : canonicalMLB;
   for (const odds of oddsList) {
-    if (canonicalMLB(odds.away) === canonicalMLB(away) && canonicalMLB(odds.home) === canonicalMLB(home)) {
+    if (canon(odds.away) === canon(away) && canon(odds.home) === canon(home)) {
       return odds;
     }
   }
@@ -300,16 +317,26 @@ async function fetchOddsForLeague(league: string, oddsProvider: string, oddsKey:
   }));
   
   const merged = results.flat();
-  console.log(`fetchOddsForLeague(${league}, ${date}): ${merged.length} odds rows`);
-  
-  if (merged.length) return merged;
+  const lgMap: Record<string,string> = { mlb:'MLB', nba:'NBA', nhl:'NHL', nfl:'NFL', mls:'MLS', soccer:'EPL' };
+  const sportLabel = lgMap[league] || league.toUpperCase();
 
-  // Fallback: ESPN
-  const lgMap: Record<string,string> = { mlb:'MLB', nba:'NBA', nhl:'NHL', nfl:'NFL', mls:'MLS' };
+  // ESPN for the requested date
   const dateFormatted = date || todayYYYYMMDD();
-  const espn = await fetchESPNOdds(lgMap[league] || league.toUpperCase(), dateFormatted);
-  console.log(`ESPN fallback for ${league}: ${espn.length} rows`);
-  return espn.map(row => ({ sportKey: keys[0] || '', start: row.start, home: row.home, away: row.away, books: row.books }));
+  const espnRows = await fetchESPNOdds(sportLabel, dateFormatted);
+
+  // (A) Force ESPN for today (or until a given date)
+  if (shouldForceESPN(dateFormatted) && espnRows.length) {
+    console.log(`Force ESPN mode for ${league}: ${espnRows.length} rows`);
+    return espnRows.map(r => ({ sportKey: keys[0] || '', start: r.start, home: r.home, away: r.away, books: r.books }));
+  }
+
+  // (B) Otherwise prefer primary; fallback to ESPN if primary empty
+  if (merged.length) return merged;
+  if (espnRows.length) {
+    console.log(`ESPN fallback for ${league}: ${espnRows.length} rows`);
+    return espnRows.map(r => ({ sportKey: keys[0] || '', start: r.start, home: r.home, away: r.away, books: r.books }));
+  }
+  return [];
 }
 
 // Updated formatter functions that use consensus
@@ -581,7 +608,7 @@ export default function SchedulesOddsWidget() {
       // Merge schedules with odds
       const mergedRows = schedules.map(schedule => {
         const leagueOdds = oddsByLeague[schedule.league] || [];
-        const matchedOdds = matchOdds(leagueOdds, schedule.away || '', schedule.home || '');
+        const matchedOdds = matchOdds(leagueOdds, schedule.away || '', schedule.home || '', schedule.league);
         return { ...schedule, odds: matchedOdds };
       });
 
@@ -778,7 +805,7 @@ export default function SchedulesOddsWidget() {
                        <td className="py-2" dangerouslySetInnerHTML={{ 
                          __html: formatConsensusML(
                            row.odds, 
-                           matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || ''), 
+                           matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '', row.league), 
                            row.away || '', 
                            row.home || ''
                          ) 
@@ -786,13 +813,13 @@ export default function SchedulesOddsWidget() {
                        <td className="py-2" dangerouslySetInnerHTML={{ 
                          __html: formatConsensusSpread(
                            row.odds, 
-                           matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '')
+                            matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '', row.league)
                          )
                        }} />
                        <td className="py-2" dangerouslySetInnerHTML={{ 
                          __html: formatConsensusTotal(
                            row.odds, 
-                           matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '')
+                           matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '', row.league)
                          )
                        }} />
                       <td className="py-2">{row.venue || ''}</td>

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { fetchLiveGames, fetchUpcomingGames } from "@/services/leagues/all";
 import { predict } from "@/services/predict";
 import { DateTime } from "luxon";
-import { fetchESPNOdds, consensusRow, canonicalMLB, type NormalizedOddsRow } from '@/services/providers';
+import { fetchESPNOdds, consensusRow, canonicalMLB, canonicalSoccer, type NormalizedOddsRow } from '@/services/providers';
 
 // === Odds helpers for PredictionsSection ===
 type OddsRow = {
@@ -28,6 +28,8 @@ function getEnvPS(key: string): string | undefined {
     SUPABASE_URL: 'VITE_SUPABASE_URL',
     ODDS_REGION: 'VITE_ODDS_REGION',
     ODDS_BOOKMAKERS: 'VITE_ODDS_BOOKMAKERS',
+    FORCE_ESPN: 'VITE_FORCE_ESPN',
+    FORCE_ESPN_UNTIL: 'VITE_FORCE_ESPN_UNTIL',
   };
   const viteKey = map[key] || key;
   const fromWindow = (window as any)?.env?.[key];
@@ -39,6 +41,17 @@ function getEnvPS(key: string): string | undefined {
     fromVite = undefined;
   }
   return fromWindow ?? fromVite;
+}
+
+/* ESPN-only if FORCE_ESPN === '1' OR selected date <= FORCE_ESPN_UNTIL (YYYY-MM-DD) */
+function shouldForceESPNPS(selectedISO: string): boolean {
+  if (getEnvPS('FORCE_ESPN') === '1') return true;
+  const until = getEnvPS('FORCE_ESPN_UNTIL');
+  if (!until) return false;
+  try {
+    const sel = DateTime.fromISO(selectedISO).toISODate();
+    return sel! <= until;
+  } catch { return false; }
 }
 
 const SPORT_KEYS_PS: Record<string,string> = {
@@ -150,20 +163,36 @@ async function fetchLeagueOddsPS(league: string): Promise<OddsRow[]> {
   const flat = await res.json();
   console.log(`fetchLeagueOddsPS(${league}): ${flat.length} odds rows`);
   
-  if (flat.length) return flat;
-
-  // Fallback: ESPN
+  // ESPN for fallback
   const lgMap: Record<string,string> = { mlb:'MLB', nba:'NBA', nhl:'NHL', nfl:'NFL', mls:'MLS' };
   const dateStr = DateTime.now().toFormat('yyyy-MM-dd');
   const espn = await fetchESPNOdds(lgMap[league] || league.toUpperCase(), dateStr);
-  console.log(`ESPN fallback for ${league}: ${espn.length} rows`);
-  return espn.map(row => ({ 
-    sportKey: sportKey,
-    start: row.start,
-    home: row.home,
-    away: row.away,
-    books: row.books
-  }));
+  
+  // (A) Force ESPN for today (or until a given date)
+  if (shouldForceESPNPS(dateStr) && espn.length) {
+    console.log(`Force ESPN mode for ${league}: ${espn.length} rows`);
+    return espn.map(row => ({ 
+      sportKey: sportKey,
+      start: row.start,
+      home: row.home,
+      away: row.away,
+      books: row.books
+    }));
+  }
+
+  // (B) Otherwise prefer primary; fallback to ESPN if primary empty  
+  if (flat.length) return flat;
+  if (espn.length) {
+    console.log(`ESPN fallback for ${league}: ${espn.length} rows`);
+    return espn.map(row => ({ 
+      sportKey: sportKey,
+      start: row.start,
+      home: row.home,
+      away: row.away,
+      books: row.books
+    }));
+  }
+  return [];
 }
 
 function pickBestSpread(row: OddsRow | null) {
@@ -246,9 +275,11 @@ function buildBookTable(row: OddsRow | null) {
   return table;
 }
 
-function matchOddsPS(list: OddsRow[], away: string, home: string): OddsRow | null {
+function matchOddsPS(list: OddsRow[], away: string, home: string, league: string): OddsRow | null {
+  // Choose canonicalizer based on league
+  const canon = (league === 'soccer' || league === 'MLS' || league === 'EPL') ? canonicalSoccer : canonicalMLB;
   for (const row of list) {
-    if (canonicalMLB(row.away) === canonicalMLB(away) && canonicalMLB(row.home) === canonicalMLB(home)) {
+    if (canon(row.away) === canon(away) && canon(row.home) === canon(home)) {
       return row;
     }
   }
@@ -302,9 +333,11 @@ const PredictionsSection = () => {
         espnOddsByLeague[lg] = espnOdds;
       }
 
-      function matchESPNOddsPS(list: NormalizedOddsRow[], away: string, home: string): NormalizedOddsRow | null {
+      function matchESPNOddsPS(list: NormalizedOddsRow[], away: string, home: string, league: string): NormalizedOddsRow | null {
+        // Choose canonicalizer based on league
+        const canon = (league === 'soccer' || league === 'MLS' || league === 'EPL') ? canonicalSoccer : canonicalMLB;
         for (const row of list) {
-          if (canonicalMLB(row.away) === canonicalMLB(away) && canonicalMLB(row.home) === canonicalMLB(home)) {
+          if (canon(row.away) === canon(away) && canon(row.home) === canon(home)) {
             return row;
           }
         }
@@ -312,8 +345,8 @@ const PredictionsSection = () => {
       }
 
       const withOdds = [...accumulatedGames].map(g => {
-        const primaryMatched = matchOddsPS(oddsByLeague[g.league] || [], g.away, g.home);
-        const espnMatched = matchESPNOddsPS(espnOddsByLeague[g.league] || [], g.away, g.home);
+        const primaryMatched = matchOddsPS(oddsByLeague[g.league] || [], g.away, g.home, g.league);
+        const espnMatched = matchESPNOddsPS(espnOddsByLeague[g.league] || [], g.away, g.home, g.league);
         
         const sportLabel = g.league.toUpperCase() as any;
         
