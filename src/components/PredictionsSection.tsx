@@ -6,194 +6,158 @@ import { useEffect, useState } from "react";
 import { fetchLiveGames, fetchUpcomingGames } from "@/services/leagues/all";
 import { predict } from "@/services/predict";
 import { DateTime } from "luxon";
-import { fetchESPNOdds, consensusRow, canonicalMLB, canonicalSoccer, type NormalizedOddsRow } from '@/services/providers';
-import { fetchESPNRows, extractESPNFor } from '@/services/espn-now';
 
-// === Odds helpers for PredictionsSection ===
-type OddsRow = {
-  sportKey: string;
-  start: string;
-  home: string;
-  away: string;
-  books: Array<{
-    key?: string;
-    bookmaker?: string;
-    title?: string;
-    markets?: Array<{ key: string; outcomes: Array<{ name: string; price: number; point?: number }> }>;
-  }>;
-};
-
-function getEnvPS(key: string): string | undefined {
+// --- Live odds helpers (proxy + fallback) ---
+function envVar(key: string): string | undefined {
   const map: Record<string,string> = {
-    ODDS_API_KEY: 'VITE_ODDS_API_KEY',
-    SUPABASE_URL: 'VITE_SUPABASE_URL',
-    ODDS_REGION: 'VITE_ODDS_REGION',
-    ODDS_BOOKMAKERS: 'VITE_ODDS_BOOKMAKERS',
-    FORCE_ESPN: 'VITE_FORCE_ESPN',
-    FORCE_ESPN_UNTIL: 'VITE_FORCE_ESPN_UNTIL',
+    SUPABASE_URL: "VITE_SUPABASE_URL",
+    ODDS_REGION: "VITE_ODDS_REGION",
+    ODDS_BOOKMAKERS: "VITE_ODDS_BOOKMAKERS",
+    ODDS_API_KEY: "VITE_ODDS_API_KEY",
   };
-  const viteKey = map[key] || key;
-  const fromWindow = (window as any)?.env?.[key];
-  // @ts-ignore
-  let fromVite: string | undefined;
-  try {
-    fromVite = (import.meta as any)?.env?.[viteKey];
-  } catch {
-    fromVite = undefined;
+  const w = (window as any)?.env?.[key];
+  let v: any; try { v = (import.meta as any)?.env?.[map[key] || key]; } catch {}
+  return w ?? v;
+}
+function sportKeyForLeague(league: string) {
+  switch (league.toUpperCase()) {
+    case "MLB": return "baseball_mlb";
+    case "NBA": return "basketball_nba";
+    case "NHL": return "icehockey_nhl";
+    case "NFL": return "americanfootball_nfl";
+    case "EPL": return "soccer_epl";
+    case "MLS": return "soccer_usa_mls";
+    default: return "";
   }
-  return fromWindow ?? fromVite;
 }
-
-/* ESPN-only if FORCE_ESPN === '1' OR selected date <= FORCE_ESPN_UNTIL (YYYY-MM-DD) */
-function shouldForceESPNPS(selectedISO: string): boolean {
-  if (getEnvPS('FORCE_ESPN') === '1') return true;
-  const until = getEnvPS('FORCE_ESPN_UNTIL');
-  if (!until) return false;
-  try {
-    const sel = DateTime.fromISO(selectedISO).toISODate();
-    return sel! <= until;
-  } catch { return false; }
-}
-
-const SPORT_KEYS_PS: Record<string,string> = {
-  MLB: 'baseball_mlb',
-  NBA: 'basketball_nba',
-  NHL: 'icehockey_nhl',
-  NFL: 'americanfootball_nfl',
-  MLS: 'soccer_usa_mls',
-};
-
 function normNamePS(s: string) {
-  return String(s || '').toUpperCase().replace(/[^A-Z0-9 ]+/g, '').replace(/\s+/g, ' ').trim();
+  return String(s||"").toUpperCase().replace(/[^A-Z0-9 ]+/g,"").replace(/\s+/g," ").trim();
 }
-
-function nicknameTokenPS(name: string): string {
-  const n = normNamePS(name);
-  // Handle MLB nicknames like Yankees, Red Sox, Blue Jays, White Sox
-  if (n.includes('YANKEES')) return 'YANKEES';
-  if (n.includes('RED SOX')) return 'RED SOX';
-  if (n.includes('BLUE JAYS')) return 'BLUE JAYS';
-  if (n.includes('WHITE SOX')) return 'WHITE SOX';
-  if (n.includes('DODGERS')) return 'DODGERS';
-  if (n.includes('GIANTS')) return 'GIANTS';
-  if (n.includes('METS')) return 'METS';
-  if (n.includes('CUBS')) return 'CUBS';
-  if (n.includes('PADRES')) return 'PADRES';
-  if (n.includes('PHILLIES')) return 'PHILLIES';
-  if (n.includes('BRAVES')) return 'BRAVES';
-  if (n.includes('MARLINS')) return 'MARLINS';
-  if (n.includes('NATIONALS')) return 'NATIONALS';
-  if (n.includes('CARDINALS')) return 'CARDINALS';
-  if (n.includes('BREWERS')) return 'BREWERS';
-  if (n.includes('REDS')) return 'REDS';
-  if (n.includes('PIRATES')) return 'PIRATES';
-  if (n.includes('ASTROS')) return 'ASTROS';
-  if (n.includes('RANGERS')) return 'RANGERS';
-  if (n.includes('MARINERS')) return 'MARINERS';
-  if (n.includes('ATHLETICS')) return 'ATHLETICS';
-  if (n.includes('ANGELS')) return 'ANGELS';
-  if (n.includes('TWINS')) return 'TWINS';
-  if (n.includes('GUARDIANS')) return 'GUARDIANS';
-  if (n.includes('TIGERS')) return 'TIGERS';
-  if (n.includes('ROYALS')) return 'ROYALS';
-  if (n.includes('ORIOLES')) return 'ORIOLES';
-  if (n.includes('RAYS')) return 'RAYS';
-  if (n.includes('BLUE JAYS')) return 'BLUE JAYS';
-  if (n.includes('ROCKIES')) return 'ROCKIES';
-  if (n.includes('DIAMONDBACKS')) return 'DIAMONDBACKS';
-  // Return the last word as fallback
-  const words = n.split(' ');
-  return words[words.length - 1] || n;
+// MLB nicknames so rows match
+function nicknameTokenPS(s: string) {
+  const n = normNamePS(s);
+  const map: Record<string,string> = {
+    "D BACKS":"ARIZONA DIAMONDBACKS","DBACKS":"ARIZONA DIAMONDBACKS","D-BACKS":"ARIZONA DIAMONDBACKS",
+    "BOSOX":"BOSTON RED SOX","RED SOX":"BOSTON RED SOX",
+    "WHITESOX":"CHICAGO WHITE SOX","WHITE SOX":"CHICAGO WHITE SOX","CHISOX":"CHICAGO WHITE SOX",
+    "JAYS":"TORONTO BLUE JAYS","BLUE JAYS":"TORONTO BLUE JAYS",
+    "YANKS":"NEW YORK YANKEES","YANKEES":"NEW YORK YANKEES","METS":"NEW YORK METS",
+    "HALOS":"LOS ANGELES ANGELS","ANGELS":"LOS ANGELES ANGELS","DODGERS":"LOS ANGELES DODGERS",
+    "GUARDS":"CLEVELAND GUARDIANS","CARDS":"ST. LOUIS CARDINALS","ROX":"COLORADO ROCKIES",
+    "NATS":"WASHINGTON NATIONALS","OS":"BALTIMORE ORIOLES","O S":"BALTIMORE ORIOLES","O'S":"BALTIMORE ORIOLES"
+  };
+  if (map[n]) return map[n];
+  if (n.includes("SOX")) return n.includes("WHITE") ? "CHICAGO WHITE SOX" : "BOSTON RED SOX";
+  return n.split(" ").slice(-1)[0]; // fallback: nickname word (Yankees, Mets, etc.)
 }
+type OddsOutcome = { name: string; price: number; point?: number };
+type OddsMarket = { key: string; outcomes: OddsOutcome[] };
+type OddsBook = { key?: string; bookmaker?: string; title?: string; markets: OddsMarket[] };
+type OddsRow = { sportKey?: string; start: string; home: string; away: string; books: OddsBook[] };
 
-function impliedProb(american: number) {
-  if (!isFinite(american) || american === 0) return null;
-  return american > 0 ? 100 / (american + 100) : (-american) / ((-american) + 100);
-}
-
-function bestH2H(odds: OddsRow | null) {
-  if (!odds) return null;
-  const markets = odds.books.flatMap(b => (b.markets || []).filter(m => m.key === 'h2h'));
-  const outcomes = markets.flatMap(m => m.outcomes || []);
-  const byTeam: Record<string, { price: number; book: string }> = {};
-  for (const b of odds.books) {
-    for (const m of (b.markets || []).filter(m => m.key === 'h2h')) {
-      for (const o of m.outcomes || []) {
-        const team = normNamePS(o.name);
-        const price = o.price;
-        const book = (b.bookmaker || b.key || '').toString();
-        const prev = byTeam[team];
-        const prevProb = prev ? impliedProb(prev.price) ?? 1 : 1;
-        const thisProb = impliedProb(price) ?? 1;
-        // Choose the offer with the LOWEST implied probability (best for bettor)
-        if (!prev || thisProb < prevProb) byTeam[team] = { price, book };
-      }
-    }
+function matchOddsPS(list: OddsRow[], away: string, home: string): OddsRow | null {
+  const a = normNamePS(away), h = normNamePS(home);
+  const an = nicknameTokenPS(away), hn = nicknameTokenPS(home);
+  for (const row of list) {
+    const ra = normNamePS(row.away), rh = normNamePS(row.home);
+    const ran = nicknameTokenPS(row.away), rhn = nicknameTokenPS(row.home);
+    const strong = (ra.includes(a) && rh.includes(h)) || (a.includes(ra) && h.includes(rh));
+    const nick = ran === an && rhn === hn;
+    if (strong || nick) return row;
   }
-  return byTeam;
+  return null;
+}
+function impliedProb(price: number) {
+  // american odds → implied %
+  return price > 0 ? 100 / (price + 100) : (-price) / ((-price) + 100);
 }
 
-async function fetchLeagueOddsPS(league: string): Promise<OddsRow[]> {
-  const sportKey = SPORT_KEYS_PS[league];
-  if (!sportKey) return [];
-  const region = getEnvPS('ODDS_REGION') || 'us';
-  const bookmakers = getEnvPS('ODDS_BOOKMAKERS') || 'draftkings,betmgm,fanduel,caesars';
-  let url = new URL(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds`);
-  url.searchParams.set('regions', region);
-  url.searchParams.set('markets', 'h2h,spreads,totals');
-  url.searchParams.set('oddsFormat', 'american');
-  url.searchParams.set('dateFormat', 'iso');
-  url.searchParams.set('bookmakers', bookmakers);
+async function fetchLeagueOddsPS(league: string, dateYYYYMMDD: string): Promise<OddsRow[]> {
+  const sportKey = sportKeyForLeague(league);
+  const region = envVar("ODDS_REGION") || "us";
+  const bookmakers = envVar("ODDS_BOOKMAKERS") || "draftkings,betmgm,fanduel,caesars";
+  const supabaseUrl = envVar("SUPABASE_URL");
 
-  const supabaseUrl = getEnvPS('SUPABASE_URL') || '';
+  let url: URL;
   if (supabaseUrl) {
-    const p = new URL(supabaseUrl.replace(/\/$/, '') + '/functions/v1/odds-proxy');
-    p.searchParams.set('sport', sportKey);
-    p.searchParams.set('regions', region);
-    p.searchParams.set('markets', 'h2h,spreads,totals');
-    p.searchParams.set('bookmakers', bookmakers);
-    url = p;
+    // secure proxy path
+    url = new URL(supabaseUrl.replace(/\/$/,"") + "/functions/v1/odds-proxy");
+    url.searchParams.set("sport", sportKey);
   } else {
-    const key = getEnvPS('ODDS_API_KEY') || '';
-    if (!key) return [];
-    url.searchParams.set('apiKey', key);
+    // direct vendor only for dev
+    url = new URL(`https://api.the-odds-api.com/v4/sports/${sportKey}/odds`);
+    const key = envVar("ODDS_API_KEY"); if (key) url.searchParams.set("apiKey", key);
   }
+  url.searchParams.set("regions", region);
+  url.searchParams.set("bookmakers", bookmakers);
+  url.searchParams.set("markets", "h2h,spreads,totals");
+  url.searchParams.set("oddsFormat", "american");
+  url.searchParams.set("dateFormat", "iso");
 
   const res = await fetch(url.toString());
-  if (!res.ok) return [];
-  const flat = await res.json();
-  console.log(`fetchLeagueOddsPS(${league}): ${flat.length} odds rows`);
-  
-  // ESPN for fallback
-  const lgMap: Record<string,string> = { mlb:'MLB', nba:'NBA', nhl:'NHL', nfl:'NFL', mls:'MLS' };
-  const dateStr = DateTime.now().toFormat('yyyy-MM-dd');
-  const espn = await fetchESPNOdds(lgMap[league] || league.toUpperCase(), dateStr);
-  
-  // (A) Force ESPN for today (or until a given date)
-  if (shouldForceESPNPS(dateStr) && espn.length) {
-    console.log(`Force ESPN mode for ${league}: ${espn.length} rows`);
-    return espn.map(row => ({ 
-      sportKey: sportKey,
-      start: row.start,
-      home: row.home,
-      away: row.away,
-      books: row.books
-    }));
-  }
+  return res.ok ? await res.json() : [];
+}
 
-  // (B) Otherwise prefer primary; fallback to ESPN if primary empty  
-  if (flat.length) return flat;
-  if (espn.length) {
-    console.log(`ESPN fallback for ${league}: ${espn.length} rows`);
-    return espn.map(row => ({ 
-      sportKey: sportKey,
-      start: row.start,
-      home: row.home,
-      away: row.away,
-      books: row.books
-    }));
+// ESPN fallback (lightweight; same returns shape)
+async function fetchESPNFallbackPS(league: string, dateYYYYMMDD: string): Promise<OddsRow[]> {
+  const lgMap: Record<string,string> = { MLB:"baseball/mlb", NBA:"basketball/nba", NHL:"hockey/nhl", NFL:"football/nfl", EPL:"soccer/eng.1", MLS:"soccer/usa.1" };
+  const path = lgMap[league.toUpperCase()]; if (!path) return [];
+  const d = (dateYYYYMMDD || "").replace(/-/g,"");
+  const url = `https://site.api.espn.com/apis/v2/sports/${path}/scoreboard?dates=${d}`;
+  try {
+    const r = await fetch(url); if (!r.ok) return [];
+    const data = await r.json();
+    const evs = data?.events || [];
+    const out: OddsRow[] = [];
+    for (const ev of evs) {
+      const comp = ev?.competitions?.[0]; if (!comp) continue;
+      const cs = comp?.competitors || [];
+      const home = cs.find((c:any)=>c?.homeAway==='home')?.team?.displayName || cs[0]?.team?.displayName;
+      const away = cs.find((c:any)=>c?.homeAway==='away')?.team?.displayName || cs[1]?.team?.displayName;
+      const start = comp?.date || ev?.date;
+      const books: OddsBook[] = [];
+      for (const o of (comp?.odds || ev?.odds || [])) {
+        const book = o?.provider?.name || o?.provider?.displayName || "ESPN";
+        const mkts: OddsMarket[] = [];
+        if (o?.moneylineAway != null && o?.moneylineHome != null) {
+          mkts.push({ key:"h2h", outcomes:[
+            { name: away, price: Number(o.moneylineAway) },
+            { name: home, price: Number(o.moneylineHome) },
+          ]});
+        }
+        if (o?.spread != null) {
+          const s = Number(o.spread);
+          mkts.push({ key:"spreads", outcomes:[
+            { name: away, point: -s, price: Number(o?.awayTeamOdds?.moneyLine ?? NaN) },
+            { name: home, point:  s, price: Number(o?.homeTeamOdds?.moneyLine ?? NaN) },
+          ]});
+        }
+        if (o?.overUnder != null) {
+          const ou = Number(o.overUnder);
+          mkts.push({ key:"totals", outcomes:[
+            { name:"Over",  point: ou, price: Number(o?.overOdds ?? NaN) },
+            { name:"Under", point: ou, price: Number(o?.underOdds ?? NaN) },
+          ]});
+        }
+        if (mkts.length) books.push({ bookmaker: book, markets: mkts });
+      }
+      out.push({ start, home, away, books });
+    }
+    return out;
+  } catch { return []; }
+}
+
+function bestH2H(row: OddsRow, team: string) {
+  const t = nicknameTokenPS(team);
+  let best: { price: number; book: string } | null = null;
+  for (const b of (row.books || [])) {
+    const m = (b.markets || []).find(m => m.key === "h2h");
+    const o = m?.outcomes?.find(o => nicknameTokenPS(o.name) === t);
+    if (o && Number.isFinite(o.price)) {
+      if (!best || o.price > best.price) best = { price: o.price, book: b.bookmaker || b.key || "book" };
+    }
   }
-  return [];
+  return best;
 }
 
 function pickBestSpread(row: OddsRow | null) {
@@ -276,16 +240,13 @@ function buildBookTable(row: OddsRow | null) {
   return table;
 }
 
-function matchOddsPS(list: OddsRow[], away: string, home: string, league: string): OddsRow | null {
-  // Choose canonicalizer based on league
-  const canon = (league === 'soccer' || league === 'MLS' || league === 'EPL') ? canonicalSoccer : canonicalMLB;
-  for (const row of list) {
-    if (canon(row.away) === canon(away) && canon(row.home) === canon(home)) {
-      return row;
-    }
-  }
-  return null;
-}
+// Helper functions for modal table rendering
+function fmtPrice(p?: number) { return typeof p === "number" ? (p>0?`+${p}`:`${p}`) : "not yet"; }
+function fmtPoint(x?: number) { return typeof x === "number" ? (x>0?`+${x}`:`${x}`) : "—"; }
+function findMarket(b:any, key:string){ return (b.markets||[]).find((m:any)=>m.key===key); }
+function findTeam(m:any, name:string){ return (m?.outcomes||[]).find((o:any)=>nicknameTokenPS(o.name)===nicknameTokenPS(name)); }
+
+// --- end helpers ---
 
 const PredictionsSection = () => {
   const [open, setOpen] = useState(false);
@@ -317,59 +278,33 @@ const PredictionsSection = () => {
       
       accumulatedGames.push(...gamesWithPredictions);
       
-      // attach market odds (best moneyline) per league
-      const leagues = Array.from(new Set(accumulatedGames.map(g => g.league)));
-      const oddsByLeague: Record<string, OddsRow[]> = {};
-      for (const lg of leagues) {
-        const odds = await fetchLeagueOddsPS(lg);
-        console.log(`Odds rows ${lg}: ${odds.length}`);
-        oddsByLeague[lg] = odds;
-      }
-      // fetch ESPN odds for consensus
-      const espnOddsByLeague: Record<string, NormalizedOddsRow[]> = {};
-      const dateYYYYMMDD = DateTime.now().toFormat('yyyy-MM-dd');
-      
-      for (const lg of leagues) {
-        const lgMap: Record<string,string> = { MLB:'MLB', NBA:'NBA', NHL:'NHL', NFL:'NFL', MLS:'MLS' };
-        const espnOdds = await fetchESPNOdds(lgMap[lg] || lg.toUpperCase(), dateYYYYMMDD);
-        espnOddsByLeague[lg] = espnOdds;
-      }
+      // date used for odds
+      const dateISO = DateTime.now().toISODate()!;
+      const league = leagueName;
+      let rows = await fetchLeagueOddsPS(league, dateISO);
+      if (!rows || !rows.length) rows = await fetchESPNFallbackPS(league, dateISO);
+      console.debug("predictions modal odds rows", league, rows?.length || 0);
 
-      function matchESPNOddsPS(list: NormalizedOddsRow[], away: string, home: string, league: string): NormalizedOddsRow | null {
-        // Choose canonicalizer based on league
-        const canon = (league === 'soccer' || league === 'MLS' || league === 'EPL') ? canonicalSoccer : canonicalMLB;
-        for (const row of list) {
-          if (canon(row.away) === canon(away) && canon(row.home) === canon(home)) {
-            return row;
-          }
-        }
-        return null;
-      }
-
+      // ...for each game g = { away, home, ... } attach market info:
       const withOdds = [...accumulatedGames].map(g => {
-        const primaryMatched = matchOddsPS(oddsByLeague[g.league] || [], g.away, g.home, g.league);
-        const espnMatched = matchESPNOddsPS(espnOddsByLeague[g.league] || [], g.away, g.home, g.league);
+        const matched = matchOddsPS(rows, g.away, g.home);
+
+        let market: any = null;
+        if (matched) {
+          const homeBest = bestH2H(matched, g.home);
+          const awayBest = bestH2H(matched, g.away);
+          market = {
+            homePrice: homeBest?.price,
+            awayPrice: awayBest?.price,
+            homeProb: homeBest ? impliedProb(homeBest.price) : null,
+            awayProb: awayBest ? impliedProb(awayBest.price) : null,
+            homeBook: homeBest?.book,
+            awayBook: awayBest?.book,
+            raw: matched, // <- keep full row for book-by-book table
+          };
+        }
         
-        const sportLabel = g.league.toUpperCase() as any;
-        
-        const consensus = consensusRow(
-          sportLabel,
-          primaryMatched ? { start: primaryMatched.start, home: primaryMatched.home, away: primaryMatched.away, books: primaryMatched.books as any } : null,
-          espnMatched
-        );
-        
-        const market = consensus ? {
-          homePrice: consensus.hHome?.price,
-          awayPrice: consensus.hAway?.price,
-          homeProb: consensus.hHome ? (consensus.hHome.price>0? 100/(consensus.hHome.price+100) : (-consensus.hHome.price)/((-consensus.hHome.price)+100)) : null,
-          awayProb: consensus.hAway ? (consensus.hAway.price>0? 100/(consensus.hAway.price+100) : (-consensus.hAway.price)/((-consensus.hAway.price)+100)) : null,
-          spreadHome: consensus.spHome,
-          spreadAway: consensus.spAway,
-          totalOver: consensus.tOver,
-          totalUnder: consensus.tUnder,
-        } : null;
-        
-        return { ...g, market, marketMatched: primaryMatched };
+        return { ...g, market, marketMatched: matched };
       });
       
       const sortedWithOdds = withOdds
@@ -512,7 +447,7 @@ const PredictionsSection = () => {
 
               <p className="text-sm text-muted-foreground mb-4">
                 {prediction.market && (prediction.market.homePrice || prediction.market.awayPrice)
-                  ? `Consensus ML: ${prediction.away} ${prediction.market.awayPrice>0?'+':''}${prediction.market.awayPrice ?? 'not yet'} / ${prediction.home} ${prediction.market.homePrice>0?'+':''}${prediction.market.homePrice ?? 'not yet'}`
+                  ? `Live ML: ${prediction.away} ${prediction.market.awayPrice>0?'+':''}${prediction.market.awayPrice ?? 'not yet'} / ${prediction.home} ${prediction.market.homePrice>0?'+':''}${prediction.market.homePrice ?? 'not yet'}`
                    : 'not yet'}
               </p>
 
@@ -589,17 +524,32 @@ const PredictionsSection = () => {
                               </tr>
                             </thead>
                             <tbody>
-                              {table.length ? table.map((r: any, i: number) => (
-                                <tr key={i} className="border-t">
-                                  <td className="px-2 py-1">{r.book || 'not yet'}</td>
-                                  <td className="px-2 py-1">{r.mlAway>0?'+':''}{r.mlAway ?? 'not yet'}</td>
-                                  <td className="px-2 py-1">{r.mlHome>0?'+':''}{r.mlHome ?? 'not yet'}</td>
-                                  <td className="px-2 py-1">{r.spAwayPt ? `${r.spAwayPt>0?'+':''}${r.spAwayPt}` : 'not yet'} {r.spAway!=null ? `(${r.spAway>0?'+':''}${r.spAway})` : ''}</td>
-                                  <td className="px-2 py-1">{r.spHomePt ? `${r.spHomePt>0?'+':''}${r.spHomePt}` : 'not yet'} {r.spHome!=null ? `(${r.spHome>0?'+':''}${r.spHome})` : ''}</td>
-                                  <td className="px-2 py-1">{r.overPt ?? 'not yet'} {r.over!=null ? `(${r.over>0?'+':''}${r.over})` : ''}</td>
-                                  <td className="px-2 py-1">{r.underPt ?? 'not yet'} {r.under!=null ? `(${r.under>0?'+':''}${r.under})` : ''}</td>
-                                </tr>
-                              )) : <tr><td className="px-2 py-2 text-muted-foreground" colSpan={7}>not yet</td></tr>}
+                              {(active.market?.raw?.books || []).length ? (
+                                (active.market.raw.books).map((b:any, i:number) => {
+                                  const h2h = findMarket(b,"h2h");
+                                  const sp  = findMarket(b,"spreads");
+                                  const tot = findMarket(b,"totals");
+                                  const aH2H = findTeam(h2h, active.away);
+                                  const hH2H = findTeam(h2h, active.home);
+                                  const aSp  = findTeam(sp, active.away);
+                                  const hSp  = findTeam(sp, active.home);
+                                  const over = (tot?.outcomes||[]).find((o:any)=>/^over$/i.test(o.name));
+                                  const under= (tot?.outcomes||[]).find((o:any)=>/^under$/i.test(o.name));
+                                  return (
+                                    <tr key={i}>
+                                      <td className="p-2">{b.bookmaker || b.key || `Book ${i+1}`}</td>
+                                      <td className="p-2">{fmtPrice(aH2H?.price)}</td>
+                                      <td className="p-2">{fmtPrice(hH2H?.price)}</td>
+                                      <td className="p-2">{`${fmtPoint(aSp?.point)} (${fmtPrice(aSp?.price)})`}</td>
+                                      <td className="p-2">{`${fmtPoint(hSp?.point)} (${fmtPrice(hSp?.price)})`}</td>
+                                      <td className="p-2">{`${fmtPoint(over?.point)} (${fmtPrice(over?.price)})`}</td>
+                                      <td className="p-2">{`${fmtPoint(under?.point)} (${fmtPrice(under?.price)})`}</td>
+                                    </tr>
+                                  );
+                                })
+                              ) : (
+                                <tr><td className="p-2" colSpan={7}>not yet</td></tr>
+                              )}
                             </tbody>
                           </table>
                         </div>
