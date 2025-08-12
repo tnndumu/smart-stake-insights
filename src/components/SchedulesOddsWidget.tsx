@@ -3,6 +3,114 @@ import { fetchESPNOdds, consensusRow, canonicalMLB, canonicalSoccer, type Normal
 import { fetchESPNRows, extractESPNFor } from '@/services/espn-now';
 import { DateTime } from 'luxon';
 
+// --- ESPN quick client (inline) ---
+type ESPNOutcome = { name: string; price: number; point?: number };
+type ESPNMarket = { key: 'h2h'|'spreads'|'totals'; outcomes: ESPNOutcome[] };
+type ESPNRow = { start: string; home: string; away: string; books: { bookmaker: string; markets: ESPNMarket[] }[] };
+
+function _norm(s:string){return String(s||'').toUpperCase().replace(/[^A-Z0-9 ]+/g,'').replace(/\s+/g,' ').trim();}
+function _canonMLB(s:string){
+  const n=_norm(s); const M:Record<string,string>={
+    'D BACKS':'ARIZONA DIAMONDBACKS','DBACKS':'ARIZONA DIAMONDBACKS','D-BACKS':'ARIZONA DIAMONDBACKS',
+    'BOSOX':'BOSTON RED SOX','RED SOX':'BOSTON RED SOX','WHITE SOX':'CHICAGO WHITE SOX','WHITESOX':'CHICAGO WHITE SOX','CHISOX':'CHICAGO WHITE SOX',
+    'JAYS':'TORONTO BLUE JAYS','BLUE JAYS':'TORONTO BLUE JAYS','YANKEES':'NEW YORK YANKEES','YANKS':'NEW YORK YANKEES',
+    'METS':'NEW YORK METS','HALOS':'LOS ANGELES ANGELS','ANGELS':'LOS ANGELES ANGELS','DODGERS':'LOS ANGELES DODGERS',
+    'GUARDS':'CLEVELAND GUARDIANS','CARDS':'ST. LOUIS CARDINALS','ROX':'COLORADO ROCKIES','NATS':'WASHINGTON NATIONALS',
+    "O'S":'BALTIMORE ORIOLES','OS':'BALTIMORE ORIOLES'
+  };
+  if (M[n]) return M[n];
+  if (n.includes('SOX')) return n.includes('WHITE')?'CHICAGO WHITE SOX':'BOSTON RED SOX';
+  return n;
+}
+function _canonSoccer(s:string){
+  const n=_norm(s); const M:Record<string,string>={
+    'MAN CITY':'MANCHESTER CITY','MAN U':'MANCHESTER UNITED','MAN UNITED':'MANCHESTER UNITED','SPURS':'TOTTENHAM HOTSPUR',
+    'GUNNERS':'ARSENAL','HAMMERS':'WEST HAM UNITED','TOON':'NEWCASTLE UNITED','WOLVES':'WOLVERHAMPTON WANDERERS',
+    'BRIGHTON':'BRIGHTON AND HOVE ALBION','LAFC':'LOS ANGELES FC','LA GALAXY':'LA GALAXY','RED BULLS':'NEW YORK RED BULLS',
+    'NYCFC':'NEW YORK CITY FC','INTER MIAMI':'INTER MIAMI CF','SOUNDERS':'SEATTLE SOUNDERS FC','AUSTIN':'AUSTIN FC','CHARLOTTE':'CHARLOTTE FC'
+  };
+  return M[n] || n;
+}
+function _canon(league:string,name:string){
+  const L=String(league||'').toUpperCase();
+  return (L==='EPL'||L==='MLS') ? _canonSoccer(name) : _canonMLB(name);
+}
+function _leaguePath(league:string){
+  switch(String(league).toUpperCase()){
+    case 'MLB': return 'baseball/mlb';
+    case 'NBA': return 'basketball/nba';
+    case 'NHL': return 'hockey/nhl';
+    case 'NFL': return 'football/nfl';
+    case 'EPL': return 'soccer/eng.1';
+    case 'MLS': return 'soccer/usa.1';
+    default: return null;
+  }
+}
+async function _fetchESPNRows(league:string, isoDate:string):Promise<ESPNRow[]>{
+  const path=_leaguePath(league); if(!path) return [];
+  const d = (isoDate||'').replace(/-/g,'');
+  const url=`https://site.api.espn.com/apis/v2/sports/${path}/scoreboard?dates=${d}`;
+  const res=await fetch(url,{headers:{accept:'application/json'}});
+  if(!res.ok) return [];
+  const data=await res.json();
+  const events=data?.events||[];
+  const out:ESPNRow[]=[];
+  for(const ev of events){
+    const comp=ev?.competitions?.[0]; if(!comp) continue;
+    const cs=comp.competitors||[];
+    const home=cs.find((c:any)=>c?.homeAway==='home')?.team?.displayName || cs[0]?.team?.displayName;
+    const away=cs.find((c:any)=>c?.homeAway==='away')?.team?.displayName || cs[1]?.team?.displayName;
+    const start=comp?.date||ev?.date;
+    const books:any[]=[];
+    for(const o of (comp?.odds||ev?.odds||[])){
+      const bookmaker=o?.provider?.name||o?.provider?.displayName||'ESPN';
+      const markets:any[]=[];
+      if(o?.moneylineAway!=null && o?.moneylineHome!=null){
+        markets.push({key:'h2h',outcomes:[
+          {name:away,price:Number(o.moneylineAway)},
+          {name:home,price:Number(o.moneylineHome)}
+        ]});
+      }
+      if(o?.spread!=null){
+        const s=Number(o.spread);
+        markets.push({key:'spreads',outcomes:[
+          {name:away,point:-s,price:Number(o?.awayTeamOdds?.moneyLine ?? NaN)},
+          {name:home,point: s,price:Number(o?.homeTeamOdds?.moneyLine ?? NaN)}
+        ]});
+      }
+      if(o?.overUnder!=null){
+        const ou=Number(o.overUnder);
+        markets.push({key:'totals',outcomes:[
+          {name:'Over', point:ou, price:Number(o?.overOdds ?? NaN)},
+          {name:'Under',point:ou, price:Number(o?.underOdds ?? NaN)}
+        ]});
+      }
+      if(markets.length) books.push({bookmaker,markets});
+    }
+    out.push({start,home,away,books});
+  }
+  return out;
+}
+function _fmtPrice(p?:number){return typeof p==='number' && isFinite(p) ? (p>0?`+${p}`:`${p}`) : 'not yet'}
+function _fmtPoint(x?:number){return typeof x==='number' && isFinite(x) ? (x>0?`+${x}`:`${x}`) : '—'}
+// --- end ESPN quick client ---
+
+// runtime flags from Site Variables or Vite env
+function _readEnv(key:string){
+  const map:Record<string,string>={FORCE_ESPN:'VITE_FORCE_ESPN',FORCE_ESPN_UNTIL:'VITE_FORCE_ESPN_UNTIL'};
+  const w=(window as any)?.env?.[key]; let v:any; try{v=(import.meta as any)?.env?.[map[key]||key];}catch{}
+  return w ?? v;
+}
+function _forceESPNFor(dateISO:string){
+  if(_readEnv('FORCE_ESPN')==='1') return true;
+  const until=_readEnv('FORCE_ESPN_UNTIL');
+  if(!until) return false;
+  try{
+    const sel=DateTime.fromISO(dateISO).toISODate(); 
+    return !!sel && sel <= until;
+  }catch{return false;}
+}
+
 // Helper types
 interface Row {
   time: string; // ISO UTC
@@ -607,11 +715,57 @@ export default function SchedulesOddsWidget() {
       setEspnOdds(espnResults.flat());
 
       // Merge schedules with odds
-      const mergedRows = schedules.map(schedule => {
+      let mergedRows = schedules.map(schedule => {
         const leagueOdds = oddsByLeague[schedule.league] || [];
         const matchedOdds = matchOdds(leagueOdds, schedule.away || '', schedule.home || '', schedule.league);
         return { ...schedule, odds: matchedOdds };
       });
+
+      // If ESPN is forced for this date, fill the three columns from ESPN now.
+      if (_forceESPNFor(date)) {
+        const lgMap:Record<string,string>={ mlb:'MLB', nba:'NBA', nhl:'NHL', nfl:'NFL', mls:'MLS', soccer:'EPL' };
+        
+        // Process each league separately
+        for (const league of selected) {
+          const L = lgMap[league] || String(league).toUpperCase();
+          const espnRows = await _fetchESPNRows(L, date);
+
+          mergedRows = mergedRows.map((row:any) => {
+            if (row.league !== league) return row;
+            
+            const A=_canon(L,row.away||''), H=_canon(L,row.home||'');
+            const r = espnRows.find(x => _canon(L,x.away)===A && _canon(L,x.home)===H);
+            if (!r) return { ...row, bestML:'not yet', bestSpread:'not yet', bestTotal:'not yet' };
+
+            const get = (key:'h2h'|'spreads'|'totals') => (r.books||[])
+              .flatMap(b => (b.markets||[]))
+              .find(m => m.key===key);
+
+            const h2h = get('h2h');
+            const sp  = get('spreads');
+            const tot = get('totals');
+
+            const hAway = h2h?.outcomes?.find(o => _canon(L,o.name)===A);
+            const hHome = h2h?.outcomes?.find(o => _canon(L,o.name)===H);
+            const sAway = sp?.outcomes?.find(o => _canon(L,o.name)===A);
+            const sHome = sp?.outcomes?.find(o => _canon(L,o.name)===H);
+            const over  = tot?.outcomes?.find(o => /^over$/i.test(o.name));
+            const under = tot?.outcomes?.find(o => /^under$/i.test(o.name));
+
+            return {
+              ...row,
+              bestML: (hAway&&hHome) ? `${_fmtPrice(hAway.price)} / ${_fmtPrice(hHome.price)}` : 'not yet',
+              bestSpread: (sAway&&sHome) ? `${_fmtPoint(sAway.point)} (${_fmtPrice(sAway.price)}) / ${_fmtPoint(sHome.point)} (${_fmtPrice(sHome.price)})` : 'not yet',
+              bestTotal: (over&&under) ? `O ${_fmtPoint(over.point)} (${_fmtPrice(over.price)}) / U ${_fmtPoint(under.point)} (${_fmtPrice(under.price)})` : 'not yet',
+            };
+          });
+        }
+
+        // Optional tiny debug note in preview
+        if (process.env.NODE_ENV !== 'production') {
+          console.info('ESPN forced for', date);
+        }
+      }
 
       // Filter by tab
       const filtered = tab === 'live' 
@@ -803,26 +957,26 @@ export default function SchedulesOddsWidget() {
                       <td className="py-2">{row.away || ''}</td>
                       <td className="py-2">{row.home || ''}</td>
                       <td className="py-2 capitalize">{row.status || ''}</td>
-                       <td className="py-2" dangerouslySetInnerHTML={{ 
-                         __html: formatConsensusML(
-                           row.odds, 
-                           matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '', row.league), 
-                           row.away || '', 
-                           row.home || ''
-                         ) 
-                       }} />
-                       <td className="py-2" dangerouslySetInnerHTML={{ 
-                         __html: formatConsensusSpread(
-                           row.odds, 
-                            matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '', row.league)
-                         )
-                       }} />
-                       <td className="py-2" dangerouslySetInnerHTML={{ 
-                         __html: formatConsensusTotal(
-                           row.odds, 
-                           matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '', row.league)
-                         )
-                       }} />
+                      <td className="py-2">
+                        {(row as any).bestML || formatConsensusML(
+                          row.odds, 
+                          matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '', row.league), 
+                          row.away || '', 
+                          row.home || ''
+                        )}
+                      </td>
+                      <td className="py-2">
+                        {(row as any).bestSpread || formatConsensusSpread(
+                          row.odds, 
+                          matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '', row.league)
+                        )}
+                      </td>
+                      <td className="py-2">
+                        {(row as any).bestTotal || formatConsensusTotal(
+                          row.odds, 
+                          matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '', row.league)
+                        )}
+                      </td>
                       <td className="py-2">{row.venue || ''}</td>
                     </tr>
                   ))
