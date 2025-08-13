@@ -8,6 +8,8 @@ import { predict } from "@/services/predict";
 import { DateTime } from "luxon";
 import { formatAmerican, formatPoint, isBetterPrice } from "@/utils/odds";
 import { useParlay } from "@/state/parlay";
+import { putModelProb } from "@/state/modelBus";
+import { pickByModel, fmtOdds, fmtPct } from "@/utils/value";
 
 // --- Live odds helpers (proxy + fallback) ---
 function envVar(key: string): string | undefined {
@@ -327,7 +329,19 @@ const PredictionsSection = () => {
       const withOdds = [...accumulatedGames].map(g => {
         const matched = matchOddsPS(rows, g.away, g.home);
 
+        // Publish model probabilities to the bus
+        const modelAway = g.prediction?.probAway;
+        const modelHome = g.prediction?.probHome;
+        if (typeof modelAway === "number" && typeof modelHome === "number") {
+          putModelProb({
+            league: leagueName, dateISO,
+            away: g.away, home: g.home,
+            awayProb: modelAway, homeProb: modelHome,
+          });
+        }
+
         let market: any = null;
+        let valueLine: string | null = null;
         if (matched) {
           const homeBest = bestH2H(matched, g.home);
           const awayBest = bestH2H(matched, g.away);
@@ -340,9 +354,18 @@ const PredictionsSection = () => {
             awayBook: awayBest?.book,
             raw: matched, // <- keep full row for book-by-book table
           };
+
+          // Calculate value edge
+          if (awayBest?.price != null && homeBest?.price != null && typeof modelAway === "number" && typeof modelHome === "number") {
+            const pick = pickByModel(modelAway, modelHome, awayBest.price, homeBest.price);
+            if (pick) {
+              const book = pick.side === "away" ? awayBest.book : homeBest.book;
+              valueLine = `Value: ${pick.edge>0?"+":""}${Math.round(pick.edge*100)}% on ${pick.side === "away" ? g.away : g.home} @ ${fmtOdds(pick.price)}${book?` (${book})`:""}`;
+            }
+          }
         }
         
-        return { ...g, market, marketMatched: matched };
+        return { ...g, market, marketMatched: matched, valueLine };
       });
       
       const sortedWithOdds = withOdds
@@ -530,6 +553,10 @@ const PredictionsSection = () => {
                 </div>
               )}
 
+              <div className="text-xs text-amber-300 mb-2">
+                {prediction.valueLine || "Value: not yet"}
+              </div>
+
               <Button variant="outline" size="sm" className="w-full group-hover:border-primary/50" onClick={() => { setActive(prediction); setOpen(true); }}>
                 <Target className="h-4 w-4 mr-2" />
                 View Full Analysis
@@ -572,6 +599,13 @@ const PredictionsSection = () => {
                   const total = pickBestTotal(row);
                   const table = buildBookTable(row);
                   
+                  // Calculate value for modal
+                  const awayBest = bestH2H(active.market?.raw, active.away);
+                  const homeBest = bestH2H(active.market?.raw, active.home);
+                  const pick = (typeof active.prediction?.probAway === "number" && typeof active.prediction?.probHome === "number" && awayBest && homeBest)
+                    ? pickByModel(active.prediction.probAway, active.prediction.probHome, awayBest.price, homeBest.price)
+                    : null;
+                  
                   return (
                     <div className="text-sm space-y-2">
                       {active.market ? (
@@ -581,6 +615,17 @@ const PredictionsSection = () => {
                           <div className="mt-1">Implied: Home {active.market.homeProb ? (active.market.homeProb*100).toFixed(1)+'%' : 'not yet'} / Away {active.market.awayProb ? (active.market.awayProb*100).toFixed(1)+'%' : 'not yet'}</div>
                         </div>
                       ) : <div className="text-muted-foreground">not yet</div>}
+                      
+                      <div className="text-sm">
+                        <strong>Value (ML):</strong>{" "}
+                        {pick
+                          ? <>
+                              {pick.edge>0?"+":""}${Math.round(pick.edge*100)}% edge —{" "}
+                              {pick.side === "away" ? active.away : active.home} @ {fmtOdds(pick.price)}{" "}
+                              <span className="text-zinc-400">(model {fmtPct(pick.modelP)}, market {fmtPct(pick.marketP)})</span>
+                            </>
+                          : "not yet"}
+                      </div>
                       
                       <div className="mt-2">
                         <div><strong>Best Spread</strong>: {spread?.away ? `${active.away} ${spread.away.point>0?'+':''}${spread.away.point} (${spread.away.price>0?'+':''}${spread.away.price})` : 'not yet'} / {spread?.home ? `${active.home} ${spread.home.point>0?'+':''}${spread.home.point} (${spread.home.price>0?'+':''}${spread.home.price})` : 'not yet'}</div>

@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchESPNOdds, consensusRow, canonicalMLB, canonicalSoccer, type NormalizedOddsRow } from '@/services/providers';
 import { fetchESPNRows, extractESPNFor } from '@/services/espn-now';
 import { DateTime } from 'luxon';
+import { getModelProb } from '@/state/modelBus';
+import { pickByModel, fmtOdds } from '@/utils/value';
 
 // --- ESPN quick client (inline) ---
 type ESPNOutcome = { name: string; price: number; point?: number };
@@ -958,12 +960,59 @@ export default function SchedulesOddsWidget() {
                       <td className="py-2">{row.home || ''}</td>
                       <td className="py-2 capitalize">{row.status || ''}</td>
                       <td className="py-2">
-                        {(row as any).bestML || formatConsensusML(
-                          row.odds, 
-                          matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '', row.league), 
-                          row.away || '', 
-                          row.home || ''
-                        )}
+                        {(() => {
+                          // Find model probabilities from bus
+                          const dateISO = DateTime.fromISO(date).toISODate()!;
+                          const model = getModelProb(row.league.toUpperCase(), dateISO, row.away || '', row.home || '');
+
+                          // Get best ML prices
+                          let bestAwayPrice: number | null = null;
+                          let bestHomePrice: number | null = null;
+                          
+                          if (row.odds) {
+                            const h2hMarkets = row.odds.books.flatMap(book => 
+                              (book.markets || [])
+                                .filter(market => market.key === 'h2h' || market.market === 'h2h')
+                                .flatMap(market => market.outcomes || [])
+                            );
+                            
+                            const awayOutcomes = h2hMarkets.filter(outcome => 
+                              /away|visitor/i.test(outcome.name) || h2hMarkets.indexOf(outcome) % 2 === 0
+                            );
+                            const homeOutcomes = h2hMarkets.filter(outcome => 
+                              /home/i.test(outcome.name) || h2hMarkets.indexOf(outcome) % 2 === 1
+                            );
+                            
+                            bestAwayPrice = awayOutcomes.length ? Math.max(...awayOutcomes.map(o => o.price)) : null;
+                            bestHomePrice = homeOutcomes.length ? Math.max(...homeOutcomes.map(o => o.price)) : null;
+                          }
+
+                          // Compute value edge if both odds and model exist
+                          let valueText: string | null = null;
+                          if (model?.awayProb != null && model?.homeProb != null && bestAwayPrice != null && bestHomePrice != null) {
+                            const pick = pickByModel(model.awayProb, model.homeProb, bestAwayPrice, bestHomePrice);
+                            if (pick) {
+                              const pickName = pick.side === "away" ? (row.away || '') : (row.home || '');
+                              valueText = `Value: ${pick.edge>0?"+":""}${Math.round(pick.edge*100)}% on ${pickName} @ ${fmtOdds(pick.price)}`;
+                            }
+                          }
+
+                          const mainContent = (row as any).bestML || formatConsensusML(
+                            row.odds, 
+                            matchESPNOdds(espnOdds.filter(e => e.sportKey === SPORT_KEYS[row.league]), row.away || '', row.home || '', row.league), 
+                            row.away || '', 
+                            row.home || ''
+                          );
+
+                          return (
+                            <div>
+                              <div dangerouslySetInnerHTML={{ __html: mainContent }} />
+                              <div className="text-[11px] text-amber-300 border-t border-zinc-800 mt-1 pt-1">
+                                {valueText || "Value: not yet"}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="py-2">
                         {(row as any).bestSpread || formatConsensusSpread(
