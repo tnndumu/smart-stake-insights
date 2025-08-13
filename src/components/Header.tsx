@@ -3,6 +3,7 @@ import { Trophy, TrendingUp, Target, User, LogOut } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { BRAND } from "@/config/brand";
+import { onAnchor } from "@/utils/nav";
 
 const Header = () => {
   const { user, signOut } = useAuth();
@@ -33,23 +34,13 @@ const Header = () => {
             </Button>
             <button 
               className="text-foreground hover:text-primary transition-colors cursor-pointer"
-              onClick={() => {
-                const element = document.getElementById('predictions');
-                if (element) {
-                  element.scrollIntoView({ behavior: 'smooth' });
-                }
-              }}
+              onClick={onAnchor('predictions')}
             >
               Predictions
             </button>
             <button 
               className="text-foreground hover:text-primary transition-colors cursor-pointer"
-              onClick={() => {
-                const element = document.getElementById('stats');
-                if (element) {
-                  element.scrollIntoView({ behavior: 'smooth' });
-                }
-              }}
+              onClick={onAnchor('schedules')}
             >
               Statistics
             </button>
@@ -88,7 +79,7 @@ const Header = () => {
                 <Button 
                   variant="default" 
                   size="sm"
-                  onClick={() => navigate('/daily-betting-insights')}
+                  onClick={onAnchor('predictions')}
                 >
                   <Target className="h-4 w-4 mr-2" />
                   Get Picks

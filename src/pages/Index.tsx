@@ -11,8 +11,12 @@ const Index = () => {
       <Header />
       <main>
         <Hero />
-        <SchedulesOddsWidget />
-        <PredictionsSection />
+        <section id="schedules">
+          <SchedulesOddsWidget />
+        </section>
+        <section id="predictions">
+          <PredictionsSection />
+        </section>
         <StatsSection />
         <AnalysisSection />
       </main>

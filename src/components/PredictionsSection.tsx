@@ -458,6 +458,10 @@ const PredictionsSection = () => {
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
             Expert analysis and data-driven predictions for today's biggest games
           </p>
+          <p className="text-sm text-muted-foreground mt-1 text-center">
+            Uses your existing model probabilities from the Predictions cards (the ones that show 57.8% etc.).
+            If a model % is missing, it shows <em>not yet</em> or <em>—</em> (no fake numbers).
+          </p>
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-6xl mx-auto">

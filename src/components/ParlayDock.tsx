@@ -15,13 +15,13 @@ export default function ParlayDock() {
       <button
         aria-label="Parlay"
         onClick={() => setOpen(true)}
-        className="fixed bottom-4 right-4 z-50 rounded-xl shadow-lg bg-amber-500 hover:bg-amber-600 text-black px-4 py-2 font-semibold"
+        className="fixed bottom-4 right-4 z-[1000] rounded-xl shadow-lg bg-amber-500 hover:bg-amber-600 text-black px-4 py-2 font-semibold"
       >
         Parlay {count ? `(${count})` : ""}
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-[1000] bg-black/50" onClick={() => setOpen(false)}>
           <div className="absolute right-0 top-0 h-full w-[380px] bg-zinc-950 border-l border-zinc-800 p-4 overflow-y-auto" onClick={(e)=>e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold">Parlay Picker</h3>

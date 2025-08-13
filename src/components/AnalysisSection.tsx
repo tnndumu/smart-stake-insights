@@ -2,6 +2,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BarChart3, TrendingUp, Users, Clock } from "lucide-react";
+import { onAnchor } from "@/utils/nav";
 
 const analysisData = [
   {
@@ -29,7 +30,7 @@ const analysisData = [
 
 const AnalysisSection = () => {
   return (
-    <section className="py-16 px-4" id="analysis">
+    <section className="py-16 px-4" id="analysis-tools">
       <div className="container mx-auto">
         <div className="text-center mb-12">
           <h2 className="text-4xl font-bold mb-4">
@@ -66,7 +67,7 @@ const AnalysisSection = () => {
                 ))}
               </div>
               
-              <Button variant="outline" className="w-full group-hover:border-primary/50">
+              <Button variant="outline" className="w-full group-hover:border-primary/50" onClick={onAnchor("analysis-tools")}>
                 Learn More
               </Button>
             </Card>
@@ -82,7 +83,7 @@ const AnalysisSection = () => {
               Access professional betting analysis and real-time data insights
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="lg" className="bg-gradient-to-r from-primary to-warning hover:opacity-90">
+              <Button size="lg" className="bg-gradient-to-r from-primary to-warning hover:opacity-90" onClick={onAnchor("analysis-tools")}>
                 <BarChart3 className="h-5 w-5 mr-2" />
                 View Analysis Tools
               </Button>
