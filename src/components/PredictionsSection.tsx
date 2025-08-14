@@ -165,7 +165,7 @@ function bestH2H(row: OddsRow, team: string) {
 }
 
 function pickBestSpread(row: OddsRow | null) {
-  if (!row) return null;
+  if (!row || !row.books) return null;
   let bestHome: any = null, bestAway: any = null;
   for (const b of row.books) {
     for (const m of (b.markets || []).filter(m => m.key === 'spreads')) {
@@ -185,7 +185,7 @@ function pickBestSpread(row: OddsRow | null) {
 }
 
 function pickBestTotal(row: OddsRow | null) {
-  if (!row) return null;
+  if (!row || !row.books) return null;
   let bestOver: any = null, bestUnder: any = null;
   for (const b of row.books) {
     for (const m of (b.markets || []).filter(m => m.key === 'totals')) {
@@ -205,7 +205,7 @@ function pickBestTotal(row: OddsRow | null) {
 }
 
 function buildBookTable(row: OddsRow | null) {
-  if (!row) return [];
+  if (!row || !row.books) return [];
   const table: Array<any> = [];
   for (const b of row.books) {
     const rec: any = { book: (b.bookmaker || b.key || '').toString() };
